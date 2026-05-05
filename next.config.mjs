@@ -25,3 +25,4 @@ const nextConfig = {
 
 export default nextConfig;
 // trigger: phase 1A first deploy
+// trigger: post-verification-toggle
