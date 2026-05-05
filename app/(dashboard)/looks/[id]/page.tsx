@@ -47,12 +47,19 @@ export default async function LookDetailPage({
     .eq("look_id", params.id)
     .order("sort_order", { ascending: true });
 
-  const items = ((itemRows ?? []) as Array<
-    LookItemRow & { creator_items: ClosetItemRow | null }
-  >).map((row) => ({
-    lookItem: rowToLookItem(row),
-    closetItem: row.creator_items ? rowToClosetItem(row.creator_items) : null,
-  }));
+  // Supabase's TS types treat foreign-table joins as arrays even when the
+  // FK is 1:1; collapse to first element. Cast through unknown because the
+  // generated types don't know cardinality.
+  type RawRow = LookItemRow & { creator_items: ClosetItemRow | ClosetItemRow[] | null };
+  const items = ((itemRows ?? []) as unknown as RawRow[]).map((row) => {
+    const ci = Array.isArray(row.creator_items)
+      ? row.creator_items[0] ?? null
+      : row.creator_items;
+    return {
+      lookItem: rowToLookItem(row),
+      closetItem: ci ? rowToClosetItem(ci) : null,
+    };
+  });
 
   const look = rowToLook(lookData as LookRow, items.length);
 

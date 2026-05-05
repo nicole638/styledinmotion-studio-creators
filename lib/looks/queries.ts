@@ -61,9 +61,10 @@ export async function fetchLooks(
     return [];
   }
 
-  return ((data ?? []) as Array<LookRow & {
-    look_items?: Array<{ count: number }>;
-  }>).map((row) => {
+  // Cast through unknown — Supabase's generated types don't carry the
+  // foreign-table count aggregate shape correctly.
+  type RawRow = LookRow & { look_items?: Array<{ count: number }> };
+  return ((data ?? []) as unknown as RawRow[]).map((row) => {
     const itemCount =
       Array.isArray(row.look_items) && row.look_items[0]
         ? row.look_items[0].count
