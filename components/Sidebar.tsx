@@ -12,13 +12,21 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
-const NAV_ITEMS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, status: "live" as const },
-  { href: "/closet", label: "Closet", icon: Shirt, status: "live" as const },
-  { href: "/looks", label: "Looks", icon: Camera, status: "live" as const },
-  { href: "/collage", label: "Collage", icon: Layers, status: "soon" as const },
-  { href: "/drafts", label: "Drafts", icon: FileEdit, status: "live" as const },
-  { href: "/profile", label: "Profile", icon: User, status: "live" as const },
+type NavStatus = "live" | "soon";
+interface NavItem {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  status: NavStatus;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, status: "live" },
+  { href: "/closet", label: "Closet", icon: Shirt, status: "live" },
+  { href: "/looks", label: "Looks", icon: Camera, status: "live" },
+  { href: "/collage", label: "Collage", icon: Layers, status: "live" },
+  { href: "/drafts", label: "Drafts", icon: FileEdit, status: "live" },
+  { href: "/profile", label: "Profile", icon: User, status: "live" },
 ];
 
 export function Sidebar() {
