@@ -14,8 +14,8 @@ import { cn } from "@/lib/cn";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, status: "live" as const },
-  { href: "/closet", label: "Closet", icon: Shirt, status: "soon" as const },
-  { href: "/looks", label: "Looks", icon: Camera, status: "soon" as const },
+  { href: "/closet", label: "Closet", icon: Shirt, status: "live" as const },
+  { href: "/looks", label: "Looks", icon: Camera, status: "live" as const },
   { href: "/collage", label: "Collage", icon: Layers, status: "soon" as const },
   { href: "/drafts", label: "Drafts", icon: FileEdit, status: "soon" as const },
   { href: "/profile", label: "Profile", icon: User, status: "soon" as const },
