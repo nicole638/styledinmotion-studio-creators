@@ -17,8 +17,8 @@ const NAV_ITEMS = [
   { href: "/closet", label: "Closet", icon: Shirt, status: "live" as const },
   { href: "/looks", label: "Looks", icon: Camera, status: "live" as const },
   { href: "/collage", label: "Collage", icon: Layers, status: "soon" as const },
-  { href: "/drafts", label: "Drafts", icon: FileEdit, status: "soon" as const },
-  { href: "/profile", label: "Profile", icon: User, status: "soon" as const },
+  { href: "/drafts", label: "Drafts", icon: FileEdit, status: "live" as const },
+  { href: "/profile", label: "Profile", icon: User, status: "live" as const },
 ];
 
 export function Sidebar() {

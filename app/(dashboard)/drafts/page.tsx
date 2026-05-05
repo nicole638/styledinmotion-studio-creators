@@ -1,12 +1,9 @@
-import { ComingSoon } from "../_components/ComingSoon";
+import { redirect } from "next/navigation";
 
 export const metadata = { title: "Drafts" };
 
 export default function DraftsPage() {
-  return (
-    <ComingSoon
-      title="Drafts."
-      description="Pick up exactly where you left off. Drafts saved here sync with the iOS app, and vice versa."
-    />
-  );
+  // Drafts live on the Looks tab under the "Draft" view filter. This page
+  // is a quick-jump shortcut from the sidebar.
+  redirect("/looks?view=draft");
 }
