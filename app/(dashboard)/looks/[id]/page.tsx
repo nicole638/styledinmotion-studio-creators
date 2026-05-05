@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, ExternalLink } from "lucide-react";
+import { ChevronLeft, ExternalLink, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import {
   type LookRow,
@@ -72,16 +72,27 @@ export default async function LookDetailPage({
         <ChevronLeft size={14} strokeWidth={2} /> Looks
       </Link>
 
-      <p className="text-xs uppercase tracking-[0.25em] text-rose mb-3">
-        {look.status === "draft"
-          ? "Draft"
-          : look.status === "archived"
-            ? "Archived look"
-            : "Published look"}
-      </p>
-      <h1 className="font-display text-4xl">
-        {look.title || "Untitled look"}
-      </h1>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.25em] text-rose mb-3">
+            {look.status === "draft"
+              ? "Draft"
+              : look.status === "archived"
+                ? "Archived look"
+                : "Published look"}
+          </p>
+          <h1 className="font-display text-4xl">
+            {look.title || "Untitled look"}
+          </h1>
+        </div>
+        <Link
+          href={`/looks/${look.id}/edit`}
+          className="inline-flex items-center gap-2 rounded-full bg-rose text-white px-4 py-2 text-sm font-medium hover:opacity-90 transition-opacity shrink-0"
+        >
+          <Pencil size={14} strokeWidth={2} />
+          Edit
+        </Link>
+      </div>
       {look.caption ? (
         <p className="mt-3 text-muted leading-relaxed max-w-prose">
           {look.caption}
@@ -158,24 +169,26 @@ export default async function LookDetailPage({
         </ul>
       )}
 
-      <div className="mt-12 bg-card border border-border rounded-2xl p-6">
-        <p className="text-xs uppercase tracking-[0.25em] text-rose mb-2">
-          Edit ships next
-        </p>
-        <p className="text-sm text-muted leading-relaxed">
-          Editing the cover photo, retagging pieces, publishing a draft, and
-          archiving land in Batch 2 of Phase 1C. For now, edits go through
-          the iOS app and reflect here on next refresh.
-        </p>
-        <a
-          href={`https://styled.in/${look.shortCode}`}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-4 inline-flex items-center gap-1 text-sm text-rose underline underline-offset-2"
-        >
-          Public link <ExternalLink size={12} strokeWidth={2} />
-        </a>
-      </div>
+      {look.status === "published" ? (
+        <div className="mt-12 bg-card border border-border rounded-2xl p-5 flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-widest text-muted">
+              Public link
+            </p>
+            <p className="font-mono text-sm truncate mt-1">
+              styled.in/{look.shortCode}
+            </p>
+          </div>
+          <a
+            href={`https://styled.in/${look.shortCode}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-sm text-rose underline underline-offset-2 shrink-0"
+          >
+            Open <ExternalLink size={12} strokeWidth={2} />
+          </a>
+        </div>
+      ) : null}
     </div>
   );
 }
