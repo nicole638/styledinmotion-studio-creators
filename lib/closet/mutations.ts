@@ -225,6 +225,38 @@ export async function archiveClosetItemAction(
   return { ok: true, itemId };
 }
 
+/**
+ * Persist a creator-edited crop. The client uploads the cropped PNG to
+ * the item-photos bucket first (gets a public URL), then calls this to
+ * point creator_items.photo_url at the new asset. We leave
+ * original_photo_url alone so a future Re-fetch can restore.
+ */
+export async function applyEditedPhotoAction(
+  itemId: string,
+  newPhotoUrl: string,
+): Promise<SaveResult> {
+  if (!newPhotoUrl || !/^https?:\/\//i.test(newPhotoUrl)) {
+    return { ok: false, error: "Invalid photo URL." };
+  }
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { error } = await supabase
+    .from("creator_items")
+    .update({ photo_url: newPhotoUrl })
+    .eq("id", itemId)
+    .eq("creator_id", user.id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/closet");
+  revalidatePath(`/closet/${itemId}`);
+  return { ok: true, itemId };
+}
+
 /** Re-scrape an item's URL and update its photo. */
 export async function refetchItemPhotoAction(
   itemId: string,
