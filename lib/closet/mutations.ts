@@ -34,7 +34,7 @@ export async function addClosetItemAction(
 
   const payload = {
     creator_id: user.id,
-    name: draft.name.trim() || null,
+    name: safeName(draft.name, draft.url),
     brand: draft.brand.trim() || null,
     category: draft.category.trim() || null,
     price: draft.price.trim() || null,
@@ -76,6 +76,16 @@ export async function scrapeUrlAction(url: string): Promise<ScrapeActionResult> 
 
   try {
     const product = await fetchProductInfo(url.trim());
+    // Treat empty-payload scrapes as failures. If the backend returns 200
+    // but couldn't extract anything useful (no name AND no photo), the row
+    // would otherwise land in the closet as an unnamed/imageless ghost.
+    if (!product.name && !product.imageUrl) {
+      return {
+        ok: false,
+        error:
+          "Scraper returned 200 but no product details. The page might require login, be a search result, or be blocked by the merchant. Try the canonical product page URL.",
+      };
+    }
     return {
       ok: true,
       data: {
@@ -96,6 +106,27 @@ export async function scrapeUrlAction(url: string): Promise<ScrapeActionResult> 
     }
     return { ok: false, error: e?.message ?? "Scrape failed" };
   }
+}
+
+/**
+ * NOT NULL fallback for creator_items.name. Tries to derive a useful
+ * label from the URL when the user hasn't named the item — never empty
+ * string or null, so the DB constraint can't bite.
+ */
+function safeName(rawName: string, rawUrl: string): string {
+  const trimmed = rawName.trim();
+  if (trimmed) return trimmed;
+  try {
+    const u = new URL(rawUrl);
+    const host = u.hostname.replace(/^www\./, "").split(".")[0];
+    if (host) {
+      const pretty = host[0].toUpperCase() + host.slice(1);
+      return `${pretty} item`;
+    }
+  } catch {
+    // fall through
+  }
+  return "Untitled piece";
 }
 
 /** Bulk variant: scrape an array of URLs in parallel; returns one slot per URL. */
@@ -136,7 +167,7 @@ export async function bulkAddClosetItemsAction(
 
   const rows = drafts.map((d) => ({
     creator_id: user.id,
-    name: d.name.trim() || null,
+    name: safeName(d.name, d.url),
     brand: d.brand.trim() || null,
     category: d.category.trim() || null,
     price: d.price.trim() || null,
@@ -185,7 +216,7 @@ export async function updateClosetItemAction(
   const { error } = await supabase
     .from("creator_items")
     .update({
-      name: draft.name.trim() || null,
+      name: safeName(draft.name, draft.url),
       brand: draft.brand.trim() || null,
       category: draft.category.trim() || null,
       price: draft.price.trim() || null,
