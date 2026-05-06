@@ -28,15 +28,13 @@ export class ScrapeError extends Error {
   }
 }
 
+// Default backend origin so the closet bulk fetch works even when the
+// Vercel project hasn't had the env var set yet. Override via
+// NEXT_PUBLIC_BACKEND_URL (e.g. for staging or a self-hosted backend).
+const DEFAULT_BACKEND_URL = "https://meadow-grindstone.vibecode.run";
+
 export async function fetchProductInfo(url: string): Promise<ScrapedProduct> {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-  if (!baseUrl) {
-    throw new ScrapeError(
-      "Backend not configured",
-      500,
-      "NEXT_PUBLIC_BACKEND_URL is not set on this Vercel deployment.",
-    );
-  }
+  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? DEFAULT_BACKEND_URL;
 
   const apiUrl = `${baseUrl.replace(/\/$/, "")}/api/product-info?url=${encodeURIComponent(url)}`;
   let res: Response;
