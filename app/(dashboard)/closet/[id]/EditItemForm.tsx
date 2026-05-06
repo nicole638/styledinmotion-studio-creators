@@ -122,9 +122,8 @@ export function EditItemForm({ item }: { item: ClosetItem }) {
             />
           </FieldRow>
           <p className="text-xs text-muted">
-            Re-fetch pulls a fresh photo via the merchant URL. To upload a
-            new photo from your computer, paste a hosted image URL above —
-            direct file upload ships in a follow-up.
+            Re-fetch pulls a fresh photo via the merchant URL, or paste a
+            hosted image URL above to set one manually.
           </p>
         </div>
       </div>
