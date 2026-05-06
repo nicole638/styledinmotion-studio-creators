@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Sparkles, Camera, Layers, FileEdit, User, ArrowUpRight } from "lucide-react";
+import { fetchAmazonSetupAcknowledged } from "@/lib/profile/queries";
+import { AmazonSetupBanner } from "@/components/AmazonSetupBanner";
 
 export const metadata = { title: "Dashboard" };
 
@@ -11,6 +13,8 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
   const firstName =
     (user?.user_metadata?.first_name as string | undefined) ?? "there";
+
+  const amazonAcknowledged = await fetchAmazonSetupAcknowledged();
 
   // At-a-glance counts. RLS scopes everything to the signed-in creator.
   const [closet, published, drafts] = user
@@ -45,6 +49,12 @@ export default async function DashboardPage() {
         This is your Studio. Manage your closet, compose looks from desktop,
         keep drafts, and edit your profile — all in sync with iOS.
       </p>
+
+      {!amazonAcknowledged ? (
+        <div className="mt-8">
+          <AmazonSetupBanner />
+        </div>
+      ) : null}
 
       <div className="mt-10 grid gap-3 grid-cols-3 max-w-md">
         <Stat label="Pieces" count={closet.count ?? 0} href="/closet" />

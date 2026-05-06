@@ -52,11 +52,14 @@ export function ProfileEditor({ initial }: Props) {
   const [bottomSize, setBottomSize] = useState(initial.measurements.bottomSize);
   const [dressSize, setDressSize] = useState(initial.measurements.dressSize);
   const [shoeSize, setShoeSize] = useState(initial.measurements.shoeSize);
-  const [braSize, setBraSize] = useState(initial.measurements.braSize);
+  // bra_size kept in state pass-through so existing iOS values aren't
+  // wiped when web saves; web no longer surfaces it for editing.
+  const braSize = initial.measurements.braSize;
   const [bodyTags, setBodyTags] = useState<string[]>(
     initial.measurements.bodyTypeSelfTags,
   );
   const [amazonTag, setAmazonTag] = useState(initial.amazonAssociatesTag);
+  const [amazonUseOwn, setAmazonUseOwn] = useState(initial.amazonUseOwnTag);
 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -122,6 +125,7 @@ export function ProfileEditor({ initial }: Props) {
         braSize,
         bodyTypeSelfTags: bodyTags,
         amazonAssociatesTag: amazonTag,
+        amazonUseOwnTag: amazonUseOwn,
       };
       const r = await updateProfileAction(draft);
       if (!r.ok) {
@@ -218,7 +222,7 @@ export function ProfileEditor({ initial }: Props) {
       </section>
 
       {/* Socials + Amazon */}
-      <section className="space-y-4">
+      <section id="channels" className="space-y-4 scroll-mt-20">
         <SectionTitle>Channels</SectionTitle>
         <p className="text-xs text-muted -mt-2">
           Social handles for your public profile, and your Amazon Associates
@@ -248,24 +252,65 @@ export function ProfileEditor({ initial }: Props) {
             </label>
           </div>
         ))}
-        <div className="flex items-center gap-3">
-          <label className="w-28 text-sm">Amazon</label>
-          <TextInput
-            value={amazonTag}
-            onChange={(v) => setAmazonTag(v.toLowerCase())}
-            placeholder="mycreator-20"
-            className="flex-1"
-          />
-          <span className="w-[68px] text-[10px] uppercase tracking-widest text-muted text-right">
-            Tag
-          </span>
+        <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">Amazon storefront</div>
+              <p className="text-xs text-muted mt-0.5">
+                If you have your own Amazon Associates account, use your tag
+                so commissions go directly to you. Otherwise the platform's
+                tag is used and we attribute your earnings via report
+                reconciliation. Pick whichever earns the better rate for you.
+              </p>
+            </div>
+            <label className="inline-flex items-center gap-2 shrink-0 cursor-pointer">
+              <span className="text-xs uppercase tracking-widest text-muted">
+                Use mine
+              </span>
+              <input
+                type="checkbox"
+                checked={amazonUseOwn}
+                onChange={(e) => setAmazonUseOwn(e.target.checked)}
+                disabled={!amazonTag.trim()}
+                className="rounded"
+              />
+            </label>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="w-28 text-sm text-muted">Associates tag</label>
+            <TextInput
+              value={amazonTag}
+              onChange={(v) => {
+                setAmazonTag(v.toLowerCase());
+                if (!v.trim()) setAmazonUseOwn(false);
+              }}
+              placeholder="mycreator-20"
+              className="flex-1"
+            />
+          </div>
+          <p className="text-xs text-muted">
+            {amazonUseOwn && amazonTag.trim() ? (
+              <>
+                <span className="text-rose font-medium">Active:</span> shop
+                links use{" "}
+                <span className="font-mono">{amazonTag.trim()}</span> —
+                commissions go to your Associates account.
+              </>
+            ) : amazonTag.trim() ? (
+              <>
+                Tag saved but inactive. Toggle{" "}
+                <span className="font-medium">Use mine</span> to switch your
+                shop links over.
+              </>
+            ) : (
+              <>
+                Using platform tag (
+                <span className="font-mono">styledinmotio-20</span>). Add
+                yours above to switch.
+              </>
+            )}
+          </p>
         </div>
-        <p className="text-xs text-muted -mt-1 ml-[124px]">
-          Your existing Amazon Associates tag (e.g. <span className="font-mono">mycreator-20</span>).
-          Leave blank if you don't have an Amazon store yet — your shop links
-          will fall back to the platform tag and we'll attribute your earnings
-          when we reconcile commission reports.
-        </p>
       </section>
 
       {/* Body */}
@@ -404,9 +449,6 @@ export function ProfileEditor({ initial }: Props) {
           </Field>
           <Field label="Shoe">
             <TextInput value={shoeSize} onChange={setShoeSize} placeholder="8.5" />
-          </Field>
-          <Field label="Bra">
-            <TextInput value={braSize} onChange={setBraSize} placeholder="32B" />
           </Field>
         </div>
       </section>

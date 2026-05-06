@@ -36,6 +36,12 @@ export interface CreatorProfile {
   measurements: ProfileMeasurements;
   /** Amazon Associates tag for Creator Connections — e.g. "mycreator-20" */
   amazonAssociatesTag: string;
+  /** When true, click-time links use this creator's tag. When false,
+   *  the platform's tag is used with ascsubtag-based attribution. */
+  amazonUseOwnTag: boolean;
+  /** Set once the creator has actively chosen between their tag and
+   *  the platform tag. NULL = surface a decision-needed banner. */
+  amazonSetupAcknowledgedAt: string | null;
   // Read-only badges
   isBetaCreator: boolean;
   isFoundingCreator: boolean;
@@ -71,6 +77,8 @@ export interface CreatorProfileRow {
   bra_size: string | null;
   body_type_self_tags: string[] | null;
   amazon_associates_tag: string | null;
+  amazon_use_own_tag: boolean;
+  amazon_setup_acknowledged_at: string | null;
   is_beta_creator: boolean;
   is_founding_creator: boolean;
   subscription_status: string;
@@ -122,6 +130,8 @@ export function rowToProfile(row: CreatorProfileRow): CreatorProfile {
       bodyTypeSelfTags: row.body_type_self_tags ?? [],
     },
     amazonAssociatesTag: row.amazon_associates_tag ?? "",
+    amazonUseOwnTag: row.amazon_use_own_tag ?? false,
+    amazonSetupAcknowledgedAt: row.amazon_setup_acknowledged_at,
     isBetaCreator: row.is_beta_creator,
     isFoundingCreator: row.is_founding_creator,
     subscriptionStatus: row.subscription_status,

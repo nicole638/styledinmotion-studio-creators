@@ -6,7 +6,7 @@ import {
 } from "@/types/profile";
 
 const PROFILE_COLUMNS =
-  "creator_id, username, first_name, last_name, bio, photo_url, location, instagram_handle, instagram_enabled, tiktok_handle, tiktok_enabled, youtube_handle, youtube_enabled, pinterest_handle, pinterest_enabled, height_cm, weight_kg, measurement_unit, top_size, bottom_size, dress_size, shoe_size, bra_size, body_type_self_tags, amazon_associates_tag, is_beta_creator, is_founding_creator, subscription_status, follower_count, follower_count_source, profile_completed_at";
+  "creator_id, username, first_name, last_name, bio, photo_url, location, instagram_handle, instagram_enabled, tiktok_handle, tiktok_enabled, youtube_handle, youtube_enabled, pinterest_handle, pinterest_enabled, height_cm, weight_kg, measurement_unit, top_size, bottom_size, dress_size, shoe_size, bra_size, body_type_self_tags, amazon_associates_tag, amazon_use_own_tag, amazon_setup_acknowledged_at, is_beta_creator, is_founding_creator, subscription_status, follower_count, follower_count_source, profile_completed_at";
 
 /**
  * Load the signed-in creator's profile. RLS scopes via auth.uid().
@@ -77,4 +77,26 @@ export async function isUsernameAvailable(
     return { available: false, reason: "Already taken." };
   }
   return { available: true };
+}
+
+/**
+ * Lightweight check used by the dashboard to decide whether to show the
+ * "Pick how Amazon attributes your earnings" banner. Returns true if the
+ * creator has actively chosen — either set their own tag with use_own_tag
+ * on, or explicitly acknowledged the platform tag.
+ */
+export async function fetchAmazonSetupAcknowledged(): Promise<boolean> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return true; // not signed in — no banner
+
+  const { data } = await supabase
+    .from("creator_profiles")
+    .select("amazon_setup_acknowledged_at")
+    .eq("creator_id", user.id)
+    .maybeSingle();
+
+  return !!data?.amazon_setup_acknowledged_at;
 }

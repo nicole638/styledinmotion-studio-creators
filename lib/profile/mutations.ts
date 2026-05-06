@@ -26,6 +26,7 @@ export interface ProfileDraft {
   braSize: string;
   bodyTypeSelfTags: string[];
   amazonAssociatesTag: string;
+  amazonUseOwnTag: boolean;
 }
 
 export interface SaveResult {
@@ -83,6 +84,14 @@ export async function updateProfileAction(
         "Amazon Associates tag should be lowercase letters, numbers, and dashes (e.g. 'mycreator-20').",
     };
   }
+  // Can't toggle "use my own" on without a tag set.
+  if (draft.amazonUseOwnTag && !amazonTag) {
+    return {
+      ok: false,
+      error:
+        "Add your Amazon Associates tag before turning on 'Use my own tag'.",
+    };
+  }
 
   // Look up handles by platform for column writes
   const handle = (p: SocialPlatform) =>
@@ -115,12 +124,21 @@ export async function updateProfileAction(
     bra_size: draft.braSize.trim() || null,
     body_type_self_tags: draft.bodyTypeSelfTags,
     amazon_associates_tag: amazonTag || null,
+    amazon_use_own_tag: draft.amazonUseOwnTag && !!amazonTag,
     updated_at: new Date().toISOString(),
   };
 
+  // Saving a non-empty tag with use_own_tag flipped on counts as
+  // acknowledgment — the creator made an active choice. The platform-tag
+  // path uses a separate action (acknowledgePlatformTagAction).
+  const ackPayload =
+    draft.amazonUseOwnTag && !!amazonTag
+      ? { ...payload, amazon_setup_acknowledged_at: new Date().toISOString() }
+      : payload;
+
   const { error } = await supabase
     .from("creator_profiles")
-    .update(payload)
+    .update(ackPayload)
     .eq("creator_id", user.id);
 
   if (error) {
@@ -144,6 +162,35 @@ export async function updateProfileAction(
 
   revalidatePath("/profile");
   revalidatePath("/");
+  return { ok: true };
+}
+
+/**
+ * Explicit "I'll use the platform's Amazon tag" acknowledgment. Stamps
+ * amazon_setup_acknowledged_at without touching the tag value. Called
+ * from the dashboard banner so the creator can dismiss the prompt
+ * without going through the full profile editor.
+ */
+export async function acknowledgePlatformTagAction(): Promise<SaveResult> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { error } = await supabase
+    .from("creator_profiles")
+    .update({
+      amazon_use_own_tag: false,
+      amazon_setup_acknowledged_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("creator_id", user.id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/");
+  revalidatePath("/profile");
   return { ok: true };
 }
 
