@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 const ADMIN_EMAILS = new Set<string>([
   "nicole@wisewayssolutions.net",
   "nicole@styledinmotion.app",
+  "nicole@testcreator.com",
 ]);
 
 export async function requireAdmin(): Promise<{
