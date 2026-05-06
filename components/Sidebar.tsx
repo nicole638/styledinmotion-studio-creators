@@ -9,6 +9,7 @@ import {
   Layers,
   FileEdit,
   User,
+  DollarSign,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -26,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/looks", label: "Looks", icon: Camera, status: "live" },
   { href: "/collage", label: "Collage", icon: Layers, status: "live" },
   { href: "/drafts", label: "Drafts", icon: FileEdit, status: "live" },
+  { href: "/earnings", label: "Earnings", icon: DollarSign, status: "live" },
   { href: "/profile", label: "Profile", icon: User, status: "live" },
 ];
 
