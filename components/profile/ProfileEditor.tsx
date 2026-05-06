@@ -217,12 +217,14 @@ export function ProfileEditor({ initial }: Props) {
         </Field>
       </section>
 
-      {/* Socials */}
+      {/* Socials + Amazon */}
       <section className="space-y-4">
-        <SectionTitle>Social handles</SectionTitle>
+        <SectionTitle>Channels</SectionTitle>
         <p className="text-xs text-muted -mt-2">
-          Toggle which ones you want shown on your public profile. We don't post
-          anywhere — these are display links only.
+          Social handles for your public profile, and your Amazon Associates
+          tag if you have an existing Amazon storefront. We don't post
+          anywhere — handles are display links; the Amazon tag is used to
+          attribute commissions on your shop links.
         </p>
         {socials.map((s) => (
           <div key={s.platform} className="flex items-center gap-3">
@@ -246,6 +248,24 @@ export function ProfileEditor({ initial }: Props) {
             </label>
           </div>
         ))}
+        <div className="flex items-center gap-3">
+          <label className="w-28 text-sm">Amazon</label>
+          <TextInput
+            value={amazonTag}
+            onChange={(v) => setAmazonTag(v.toLowerCase())}
+            placeholder="mycreator-20"
+            className="flex-1"
+          />
+          <span className="w-[68px] text-[10px] uppercase tracking-widest text-muted text-right">
+            Tag
+          </span>
+        </div>
+        <p className="text-xs text-muted -mt-1 ml-[124px]">
+          Your existing Amazon Associates tag (e.g. <span className="font-mono">mycreator-20</span>).
+          Leave blank if you don't have an Amazon store yet — your shop links
+          will fall back to the platform tag and we'll attribute your earnings
+          when we reconcile commission reports.
+        </p>
       </section>
 
       {/* Body */}
@@ -389,26 +409,6 @@ export function ProfileEditor({ initial }: Props) {
             <TextInput value={braSize} onChange={setBraSize} placeholder="32B" />
           </Field>
         </div>
-      </section>
-
-      {/* Affiliate */}
-      <section className="space-y-4">
-        <SectionTitle>Affiliate</SectionTitle>
-        <p className="text-xs text-muted -mt-2">
-          For creators in Amazon's Creator Connections program. We append
-          your tag to Amazon links shoppers click on your looks so the
-          commissions attribute to your Associates account.
-        </p>
-        <Field
-          label="Amazon Associates tag"
-          hint="Lowercase letters, numbers, and dashes — e.g. mycreator-20. Leave blank if you don't have an Associates account yet."
-        >
-          <TextInput
-            value={amazonTag}
-            onChange={(v) => setAmazonTag(v.toLowerCase())}
-            placeholder="mycreator-20"
-          />
-        </Field>
       </section>
 
       {/* Status messages + save */}
