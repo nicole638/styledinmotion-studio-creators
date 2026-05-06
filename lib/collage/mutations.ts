@@ -3,13 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { generateShortCode } from "@/lib/looks/short-code";
-import type { CollageLayout } from "@/types/collage";
+import {
+  type CollageLayout,
+  type CutoutLayer,
+  layoutToJson,
+} from "@/types/collage";
 
 export interface SaveCollageInput {
   /** Set when editing; absent when creating a new look. */
   lookId?: string;
   title: string;
-  /** Public URL of the flattened PNG already uploaded to look-photos bucket. */
+  /** Public URL of the flattened PNG already uploaded to look-photos. */
   coverPhotoUrl: string;
   layout: CollageLayout;
   publish: boolean;
@@ -22,14 +26,12 @@ export interface SaveCollageResult {
 }
 
 /**
- * Persist a collage as a look. The flattened PNG should already be in
- * look-photos via client-side upload (saves a roundtrip). This action
- * just inserts/updates the looks row and the look_items rows.
+ * Persist a collage as a look. The flattened PNG is already in look-photos
+ * via client-side upload; this action just inserts/updates rows.
  *
- * - Creates a new looks row with collage_layout JSONB + cover_photo_url
- * - Inserts look_items rows for each itemId in the layout (so the
- *   shopper-facing detail page can render the tagged pieces grid)
- * - publish=true sets published_at; false leaves NULL (draft)
+ * - Creates/updates a looks row with collage_layout JSONB + cover_photo_url
+ * - Inserts look_items rows ONLY for cutout layers (photo + text layers
+ *   don't represent closet pieces)
  */
 export async function saveCollageAction(
   input: SaveCollageInput,
@@ -41,18 +43,20 @@ export async function saveCollageAction(
   if (!user) return { ok: false, error: "Not signed in." };
 
   const title = input.title.trim() || "Untitled collage";
+  const layoutJson = layoutToJson(input.layout);
+  const cutouts = input.layout.layers.filter(
+    (l): l is CutoutLayer => l.kind === "cutout",
+  );
 
   if (input.lookId) {
-    // Edit path — update existing look's cover + layout, replace look_items
+    // Edit path
     const { error: updErr } = await supabase
       .from("looks")
       .update({
         title,
         cover_photo_url: input.coverPhotoUrl,
-        collage_layout: input.layout,
-        published_at: input.publish
-          ? new Date().toISOString()
-          : null,
+        collage_layout: layoutJson,
+        published_at: input.publish ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", input.lookId)
@@ -60,7 +64,7 @@ export async function saveCollageAction(
 
     if (updErr) return { ok: false, error: updErr.message };
 
-    const itemErr = await replaceLookItems(input.lookId, input.layout);
+    const itemErr = await replaceLookItems(input.lookId, cutouts);
     if (itemErr) return { ok: false, error: itemErr };
 
     revalidatePath("/looks");
@@ -68,7 +72,7 @@ export async function saveCollageAction(
     return { ok: true, lookId: input.lookId };
   }
 
-  // Create path — try inserting up to 3 times on short_code collision
+  // Create path — retry on rare short_code collision
   let lastError: string | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const shortCode = generateShortCode();
@@ -78,7 +82,7 @@ export async function saveCollageAction(
         creator_id: user.id,
         title,
         cover_photo_url: input.coverPhotoUrl,
-        collage_layout: input.layout,
+        collage_layout: layoutJson,
         short_code: shortCode,
         published_at: input.publish ? new Date().toISOString() : null,
       })
@@ -87,7 +91,7 @@ export async function saveCollageAction(
 
     if (!error && data) {
       const lookId = data.id;
-      const itemErr = await replaceLookItems(lookId, input.layout);
+      const itemErr = await replaceLookItems(lookId, cutouts);
       if (itemErr) return { ok: false, error: itemErr };
       revalidatePath("/looks");
       return { ok: true, lookId };
@@ -102,7 +106,7 @@ export async function saveCollageAction(
 
 async function replaceLookItems(
   lookId: string,
-  layout: CollageLayout,
+  cutouts: CutoutLayer[],
 ): Promise<string | null> {
   const supabase = createClient();
 
@@ -112,11 +116,11 @@ async function replaceLookItems(
     .eq("look_id", lookId);
   if (delErr) return `Could not clear old items: ${delErr.message}`;
 
-  if (layout.items.length === 0) return null;
+  if (cutouts.length === 0) return null;
 
-  const rows = layout.items.map((it, idx) => ({
+  const rows = cutouts.map((c, idx) => ({
     look_id: lookId,
-    creator_item_id: it.itemId,
+    creator_item_id: c.itemId,
     sort_order: idx,
   }));
 

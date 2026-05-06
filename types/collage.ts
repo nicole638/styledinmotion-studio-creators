@@ -4,12 +4,19 @@
  * Coordinate space is 1080×1080 (the iOS canvas size). Web renders at a
  * smaller display size and scales input/output via CANVAS_SIZE.
  *
- * Shape persisted to DB:
+ * v2: extends the v1 shape additively with photos[], text[], and background:
+ *
  * {
  *   "template": "style-journal" | "editorial" | "grid" | "editorial-cover",
- *   "items": [
- *     { "itemId": "...", "x": 0..1080, "y": 0..1080, "scale": 0.3..2.5,
- *       "rotation": -180..180, "zIndex": int }
+ *   "background": "#F8F4EE",                      // v2 (optional)
+ *   "items": [                                    // v1 — iOS reads this
+ *     { "itemId": "...", "x": ..., "y": ..., "scale": ..., "rotation": ..., "zIndex": ... }
+ *   ],
+ *   "photos": [                                   // v2 (optional)
+ *     { "id": "...", "photoUrl": "...", "x": ..., ... }
+ *   ],
+ *   "text": [                                     // v2 (optional)
+ *     { "id": "...", "text": "...", "fontSize": ..., "color": "...", ... }
  *   ]
  * }
  */
@@ -24,49 +31,190 @@ export type TemplateId =
   | "grid"
   | "editorial-cover";
 
-export interface CollageItemTransform {
-  /** creator_items.id of the underlying piece */
-  itemId: string;
-  /** Centerpoint x in 1080-space */
-  x: number;
-  /** Centerpoint y in 1080-space */
+export type LayerKind = "cutout" | "photo" | "text";
+export type FontFamily = "serif" | "sans" | "display";
+
+interface LayerBase {
+  /** Unique id within this collage — uuid-like string. */
+  id: string;
+  kind: LayerKind;
+  x: number; // centerpoint, 1080-space
   y: number;
-  /** 1.0 = natural size at 360px-square base, 0.3..2.5 reasonable range */
-  scale: number;
-  /** Degrees, -180..180 */
-  rotation: number;
-  /** Stacking order; higher = on top */
+  scale: number; // 0.3..3.0 (text gets a wider range than cutouts)
+  rotation: number; // -180..180
   zIndex: number;
 }
 
-export interface CollageLayout {
-  template: TemplateId;
-  items: CollageItemTransform[];
+export interface CutoutLayer extends LayerBase {
+  kind: "cutout";
+  /** creator_items.id of the underlying piece */
+  itemId: string;
 }
 
-export const TEMPLATE_OPTIONS: Array<{
+export interface PhotoLayer extends LayerBase {
+  kind: "photo";
+  /** Supabase Storage public URL */
+  photoUrl: string;
+}
+
+export interface TextLayer extends LayerBase {
+  kind: "text";
+  text: string;
+  fontSize: number; // px in 1080-space
+  color: string;
+  fontFamily: FontFamily;
+  bold: boolean;
+  italic: boolean;
+}
+
+export type Layer = CutoutLayer | PhotoLayer | TextLayer;
+
+export interface CollageLayout {
+  template: TemplateId;
+  background: string; // hex color, e.g. "#F8F4EE"
+  layers: Layer[];
+}
+
+// ─────────────── Persistence helpers ───────────────
+// DB JSONB shape splits layers by kind for backward compat with iOS.
+
+export interface CollageLayoutJsonV1 {
+  template: TemplateId;
+  background?: string;
+  items: Array<Pick<CutoutLayer, "x" | "y" | "scale" | "rotation" | "zIndex"> & {
+    itemId: string;
+  }>;
+  photos?: Array<Omit<PhotoLayer, "kind">>;
+  text?: Array<Omit<TextLayer, "kind">>;
+}
+
+export function layoutToJson(layout: CollageLayout): CollageLayoutJsonV1 {
+  const items: CollageLayoutJsonV1["items"] = [];
+  const photos: NonNullable<CollageLayoutJsonV1["photos"]> = [];
+  const text: NonNullable<CollageLayoutJsonV1["text"]> = [];
+
+  for (const layer of layout.layers) {
+    if (layer.kind === "cutout") {
+      items.push({
+        itemId: layer.itemId,
+        x: layer.x,
+        y: layer.y,
+        scale: layer.scale,
+        rotation: layer.rotation,
+        zIndex: layer.zIndex,
+      });
+    } else if (layer.kind === "photo") {
+      photos.push({
+        id: layer.id,
+        photoUrl: layer.photoUrl,
+        x: layer.x,
+        y: layer.y,
+        scale: layer.scale,
+        rotation: layer.rotation,
+        zIndex: layer.zIndex,
+      });
+    } else {
+      text.push({
+        id: layer.id,
+        text: layer.text,
+        fontSize: layer.fontSize,
+        color: layer.color,
+        fontFamily: layer.fontFamily,
+        bold: layer.bold,
+        italic: layer.italic,
+        x: layer.x,
+        y: layer.y,
+        scale: layer.scale,
+        rotation: layer.rotation,
+        zIndex: layer.zIndex,
+      });
+    }
+  }
+
+  return {
+    template: layout.template,
+    background: layout.background,
+    items,
+    photos: photos.length > 0 ? photos : undefined,
+    text: text.length > 0 ? text : undefined,
+  };
+}
+
+// ─────────────── Templates ───────────────
+
+export interface TemplateOption {
   id: TemplateId;
   label: string;
   description: string;
-}> = [
+  background: string;
+}
+
+export const TEMPLATE_OPTIONS: TemplateOption[] = [
   {
     id: "style-journal",
     label: "Style journal",
-    description: "Editorial column — items stacked vertically with subtle drift.",
+    description:
+      "Editorial column on cream paper — items stacked with subtle drift.",
+    background: "#F1E9DB", // warm cream paper
   },
   {
     id: "editorial",
     label: "Editorial",
-    description: "Asymmetric — one featured piece, others orbiting.",
+    description: "Crisp white — one featured piece, others orbiting.",
+    background: "#FAFAF7", // off-white
   },
   {
     id: "grid",
     label: "Grid",
-    description: "Clean 2×N grid for catalog-feel layouts.",
+    description: "Soft warm gray — clean 2×N catalog layout.",
+    background: "#E8E5E0", // warm gray
   },
   {
     id: "editorial-cover",
     label: "Editorial cover",
-    description: "Full-bleed centerpiece with smaller accents.",
+    description: "Blush full-bleed — for centerpiece + look-photo collages.",
+    background: "#F4D8CD", // muted blush
   },
 ];
+
+export function getTemplateBackground(template: TemplateId): string {
+  return TEMPLATE_OPTIONS.find((t) => t.id === template)?.background ?? "#F8F4EE";
+}
+
+// ─────────────── ID + defaults ───────────────
+
+export function newLayerId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `layer-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export const DEFAULT_TEXT_FONT_SIZE = 96; // 1080-space
+export const DEFAULT_TEXT_COLOR = "#1A1A1A";
+export const TEXT_COLOR_PRESETS = [
+  "#1A1A1A", // ink
+  "#FFFFFF", // white
+  "#B53D2A", // brand rose
+  "#A4845A", // tan
+  "#3F4A2D", // moss
+  "#5D6E89", // dusk blue
+];
+
+export function makeDefaultTextLayer(zIndex: number): TextLayer {
+  return {
+    id: newLayerId(),
+    kind: "text",
+    text: "Tap to edit",
+    x: CANVAS_SIZE / 2,
+    y: CANVAS_SIZE / 2,
+    scale: 1,
+    rotation: 0,
+    zIndex,
+    fontSize: DEFAULT_TEXT_FONT_SIZE,
+    color: DEFAULT_TEXT_COLOR,
+    fontFamily: "display",
+    bold: false,
+    italic: false,
+  };
+}

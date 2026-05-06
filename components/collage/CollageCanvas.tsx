@@ -1,34 +1,43 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronUp, ChevronDown, Trash2 } from "lucide-react";
+import {
+  ChevronUp,
+  ChevronDown,
+  Trash2,
+  Bold,
+  Italic,
+} from "lucide-react";
 import {
   CANVAS_SIZE,
   DISPLAY_SIZE,
   DISPLAY_SCALE,
-  type CollageItemTransform,
+  TEXT_COLOR_PRESETS,
+  type Layer,
+  type TextLayer,
 } from "@/types/collage";
+import { CUTOUT_BASE_SIZE, PHOTO_LAYER_BASE_SIZE, fontFamilyToCss } from "@/lib/collage/render";
 import type { ClosetItem } from "@/types/closet";
 
 interface Props {
-  items: CollageItemTransform[];
+  layers: Layer[];
+  background: string;
   /** Closet items keyed by id — used to look up cutout/photo URLs. */
-  itemsById: Map<string, ClosetItem>;
+  cutoutsById: Map<string, ClosetItem>;
   selectedId: string | null;
   onSelectionChange: (id: string | null) => void;
-  onTransformChange: (id: string, next: Partial<CollageItemTransform>) => void;
+  onLayerChange: (id: string, next: Partial<Layer>) => void;
   onRemove: (id: string) => void;
   onZIndexShift: (id: string, direction: "up" | "down") => void;
 }
 
-const ITEM_BASE_SIZE = 360; // 1080-space; mirrors lib/collage/render.ts
-
 export function CollageCanvas({
-  items,
-  itemsById,
+  layers,
+  background,
+  cutoutsById,
   selectedId,
   onSelectionChange,
-  onTransformChange,
+  onLayerChange,
   onRemove,
   onZIndexShift,
 }: Props) {
@@ -41,15 +50,17 @@ export function CollageCanvas({
     origY: number;
   } | null>(null);
 
-  // Cache image aspect ratios so the box rendering matches the eventual
-  // canvas flatten dimensions exactly.
+  // Cache image aspect ratios for cutouts + photos
   const [aspects, setAspects] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    items.forEach((it) => {
-      if (aspects[it.itemId]) return;
-      const item = itemsById.get(it.itemId);
-      const url = item?.photoUrl;
+    layers.forEach((layer) => {
+      if (layer.kind === "text") return;
+      if (aspects[layer.id]) return;
+      const url =
+        layer.kind === "cutout"
+          ? cutoutsById.get(layer.itemId)?.photoUrl
+          : layer.photoUrl;
       if (!url) return;
       const img = new Image();
       img.crossOrigin = "anonymous";
@@ -57,26 +68,26 @@ export function CollageCanvas({
         if (img.naturalWidth && img.naturalHeight) {
           setAspects((prev) => ({
             ...prev,
-            [it.itemId]: img.naturalWidth / img.naturalHeight,
+            [layer.id]: img.naturalWidth / img.naturalHeight,
           }));
         }
       };
       img.src = url;
     });
-  }, [items, itemsById, aspects]);
+  }, [layers, cutoutsById, aspects]);
 
   const handlePointerDown = (e: React.PointerEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
     onSelectionChange(id);
-    const tr = items.find((it) => it.itemId === id);
-    if (!tr) return;
+    const layer = layers.find((l) => l.id === id);
+    if (!layer) return;
     dragRef.current = {
       id,
       startX: e.clientX,
       startY: e.clientY,
-      origX: tr.x,
-      origY: tr.y,
+      origX: layer.x,
+      origY: layer.y,
     };
     (e.target as Element).setPointerCapture?.(e.pointerId);
   };
@@ -85,7 +96,7 @@ export function CollageCanvas({
     if (!dragRef.current) return;
     const dx = (e.clientX - dragRef.current.startX) / DISPLAY_SCALE;
     const dy = (e.clientY - dragRef.current.startY) / DISPLAY_SCALE;
-    onTransformChange(dragRef.current.id, {
+    onLayerChange(dragRef.current.id, {
       x: clamp(dragRef.current.origX + dx, 0, CANVAS_SIZE),
       y: clamp(dragRef.current.origY + dy, 0, CANVAS_SIZE),
     });
@@ -99,9 +110,10 @@ export function CollageCanvas({
   };
 
   const handleCanvasClick = (e: React.MouseEvent) => {
-    // Click on empty canvas deselects
     if (e.target === canvasRef.current) onSelectionChange(null);
   };
+
+  const selectedLayer = layers.find((l) => l.id === selectedId) ?? null;
 
   return (
     <div className="space-y-4">
@@ -112,108 +124,190 @@ export function CollageCanvas({
         style={{
           width: DISPLAY_SIZE,
           height: DISPLAY_SIZE,
-          backgroundColor: "#F8F4EE",
+          backgroundColor: background,
         }}
       >
-        {items.map((tr) => {
-          const closet = itemsById.get(tr.itemId);
-          const url = closet?.photoUrl;
+        {layers.map((layer) => {
+          const isSelected = selectedId === layer.id;
+
+          if (layer.kind === "text") {
+            return (
+              <TextLayerEl
+                key={layer.id}
+                layer={layer}
+                isSelected={isSelected}
+                onPointerDown={(e) => handlePointerDown(e, layer.id)}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+              />
+            );
+          }
+
+          // Cutout or photo
+          const url =
+            layer.kind === "cutout"
+              ? cutoutsById.get(layer.itemId)?.photoUrl
+              : layer.photoUrl;
           if (!url) return null;
 
-          const aspect = aspects[tr.itemId] ?? 1;
-          const baseDisplay = ITEM_BASE_SIZE * DISPLAY_SCALE;
+          const aspect = aspects[layer.id] ?? 1;
+          const baseSize =
+            layer.kind === "cutout" ? CUTOUT_BASE_SIZE : PHOTO_LAYER_BASE_SIZE;
+          const baseDisplay = baseSize * DISPLAY_SCALE;
           let w = baseDisplay;
           let h = baseDisplay;
           if (aspect >= 1) h = baseDisplay / aspect;
           else w = baseDisplay * aspect;
-          w *= tr.scale;
-          h *= tr.scale;
+          w *= layer.scale;
+          h *= layer.scale;
 
-          const isSelected = selectedId === tr.itemId;
-          const left = tr.x * DISPLAY_SCALE - w / 2;
-          const top = tr.y * DISPLAY_SCALE - h / 2;
+          const left = layer.x * DISPLAY_SCALE - w / 2;
+          const top = layer.y * DISPLAY_SCALE - h / 2;
 
           return (
             <div
-              key={tr.itemId}
-              onPointerDown={(e) => handlePointerDown(e, tr.itemId)}
+              key={layer.id}
+              onPointerDown={(e) => handlePointerDown(e, layer.id)}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               onPointerCancel={handlePointerUp}
               className={`absolute cursor-move touch-none select-none ${
-                isSelected ? "ring-2 ring-rose ring-offset-2 ring-offset-bg" : ""
+                isSelected
+                  ? "ring-2 ring-rose ring-offset-2 ring-offset-bg"
+                  : ""
               }`}
               style={{
                 left,
                 top,
                 width: w,
                 height: h,
-                transform: `rotate(${tr.rotation}deg)`,
-                zIndex: tr.zIndex,
+                transform: `rotate(${layer.rotation}deg)`,
+                zIndex: layer.zIndex,
               }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={url}
-                alt={closet?.name ?? "Piece"}
+                alt={
+                  layer.kind === "cutout"
+                    ? cutoutsById.get(layer.itemId)?.name ?? "Piece"
+                    : "Photo"
+                }
                 draggable={false}
                 crossOrigin="anonymous"
-                className="w-full h-full object-contain pointer-events-none"
+                className={`w-full h-full pointer-events-none ${
+                  layer.kind === "cutout" ? "object-contain" : "object-cover"
+                }`}
               />
             </div>
           );
         })}
       </div>
 
-      {/* Selected item controls */}
-      {selectedId ? (
-        <SelectedItemControls
-          transform={items.find((it) => it.itemId === selectedId)!}
-          item={itemsById.get(selectedId)}
-          onTransformChange={(next) =>
-            onTransformChange(selectedId, next)
+      {selectedLayer ? (
+        <SelectedLayerControls
+          layer={selectedLayer}
+          cutoutName={
+            selectedLayer.kind === "cutout"
+              ? cutoutsById.get(selectedLayer.itemId)?.name ?? undefined
+              : undefined
           }
+          onLayerChange={(next) => onLayerChange(selectedLayer.id, next)}
           onRemove={() => {
-            onRemove(selectedId);
+            onRemove(selectedLayer.id);
             onSelectionChange(null);
           }}
-          onZIndexShift={(direction) => onZIndexShift(selectedId, direction)}
+          onZIndexShift={(direction) => onZIndexShift(selectedLayer.id, direction)}
         />
       ) : (
         <p className="text-xs text-muted text-center">
-          Tap a piece to select. Drag to move, use sliders below to scale and
-          rotate.
+          Tap a layer to select. Drag to move, use sliders below to scale and rotate.
         </p>
       )}
     </div>
   );
 }
 
+// ─────────── Text layer ───────────
+
+function TextLayerEl({
+  layer,
+  isSelected,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+}: {
+  layer: TextLayer;
+  isSelected: boolean;
+  onPointerDown: (e: React.PointerEvent) => void;
+  onPointerMove: (e: React.PointerEvent) => void;
+  onPointerUp: (e: React.PointerEvent) => void;
+}) {
+  // Display scale: 1080-space sizes scaled to display
+  const fontSizePx = layer.fontSize * DISPLAY_SCALE * layer.scale;
+  const left = layer.x * DISPLAY_SCALE;
+  const top = layer.y * DISPLAY_SCALE;
+
+  return (
+    <div
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      className={`absolute cursor-move touch-none select-none px-2 py-1 ${
+        isSelected ? "outline outline-2 outline-rose outline-offset-2" : ""
+      }`}
+      style={{
+        left,
+        top,
+        transform: `translate(-50%, -50%) rotate(${layer.rotation}deg)`,
+        zIndex: layer.zIndex,
+        fontFamily: fontFamilyToCss(layer.fontFamily),
+        fontSize: fontSizePx,
+        fontWeight: layer.bold ? 700 : 400,
+        fontStyle: layer.italic ? "italic" : "normal",
+        color: layer.color,
+        whiteSpace: "pre",
+        lineHeight: 1.2,
+        textAlign: "center",
+      }}
+    >
+      {layer.text || " "}
+    </div>
+  );
+}
+
+// ─────────── Controls ───────────
+
 interface ControlsProps {
-  transform: CollageItemTransform;
-  item?: ClosetItem;
-  onTransformChange: (next: Partial<CollageItemTransform>) => void;
+  layer: Layer;
+  cutoutName?: string;
+  onLayerChange: (next: Partial<Layer>) => void;
   onRemove: () => void;
   onZIndexShift: (direction: "up" | "down") => void;
 }
 
-function SelectedItemControls({
-  transform,
-  item,
-  onTransformChange,
+function SelectedLayerControls({
+  layer,
+  cutoutName,
+  onLayerChange,
   onRemove,
   onZIndexShift,
 }: ControlsProps) {
+  const kindLabel =
+    layer.kind === "cutout"
+      ? cutoutName ?? "Piece"
+      : layer.kind === "photo"
+        ? "Photo"
+        : "Text";
   return (
     <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-muted">
-            Selected
+            Selected · {layer.kind}
           </div>
-          <div className="text-sm truncate">
-            {item?.name ?? "Piece"}
-          </div>
+          <div className="text-sm truncate">{kindLabel}</div>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -235,7 +329,7 @@ function SelectedItemControls({
           <button
             type="button"
             onClick={onRemove}
-            aria-label="Remove from collage"
+            aria-label="Remove layer"
             className="w-7 h-7 grid place-items-center rounded-full border border-border hover:border-rose text-[#B53D2A]"
           >
             <Trash2 size={12} strokeWidth={2} />
@@ -243,19 +337,23 @@ function SelectedItemControls({
         </div>
       </div>
 
+      {layer.kind === "text" ? (
+        <TextControls layer={layer} onLayerChange={onLayerChange} />
+      ) : null}
+
       <div>
         <div className="flex items-center justify-between text-xs text-muted mb-1">
           <span>Scale</span>
-          <span>{transform.scale.toFixed(2)}×</span>
+          <span>{layer.scale.toFixed(2)}×</span>
         </div>
         <input
           type="range"
-          min={0.3}
-          max={2.5}
+          min={layer.kind === "text" ? 0.4 : 0.3}
+          max={3.0}
           step={0.05}
-          value={transform.scale}
+          value={layer.scale}
           onChange={(e) =>
-            onTransformChange({ scale: Number.parseFloat(e.target.value) })
+            onLayerChange({ scale: Number.parseFloat(e.target.value) })
           }
           className="w-full accent-rose"
         />
@@ -264,19 +362,125 @@ function SelectedItemControls({
       <div>
         <div className="flex items-center justify-between text-xs text-muted mb-1">
           <span>Rotate</span>
-          <span>{transform.rotation}°</span>
+          <span>{layer.rotation}°</span>
         </div>
         <input
           type="range"
           min={-180}
           max={180}
           step={1}
-          value={transform.rotation}
+          value={layer.rotation}
           onChange={(e) =>
-            onTransformChange({ rotation: Number.parseInt(e.target.value, 10) })
+            onLayerChange({ rotation: Number.parseInt(e.target.value, 10) })
           }
           className="w-full accent-rose"
         />
+      </div>
+    </div>
+  );
+}
+
+function TextControls({
+  layer,
+  onLayerChange,
+}: {
+  layer: TextLayer;
+  onLayerChange: (next: Partial<Layer>) => void;
+}) {
+  return (
+    <div className="space-y-3 border-b border-border pb-3">
+      <textarea
+        value={layer.text}
+        onChange={(e) => onLayerChange({ text: e.target.value })}
+        rows={2}
+        placeholder="Type your text"
+        className="w-full rounded-2xl border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-rose resize-y"
+      />
+
+      <div>
+        <div className="flex items-center justify-between text-xs text-muted mb-1">
+          <span>Font size</span>
+          <span>{layer.fontSize}px</span>
+        </div>
+        <input
+          type="range"
+          min={32}
+          max={240}
+          step={4}
+          value={layer.fontSize}
+          onChange={(e) =>
+            onLayerChange({ fontSize: Number.parseInt(e.target.value, 10) })
+          }
+          className="w-full accent-rose"
+        />
+      </div>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex gap-1 text-xs">
+          {(["display", "serif", "sans"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => onLayerChange({ fontFamily: f })}
+              className={`px-2 py-1 rounded-md ${
+                layer.fontFamily === f
+                  ? "bg-rose text-white"
+                  : "bg-bg border border-border"
+              }`}
+            >
+              {f === "display" ? "Editorial" : f === "serif" ? "Serif" : "Sans"}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => onLayerChange({ bold: !layer.bold })}
+            aria-label="Bold"
+            className={`w-7 h-7 grid place-items-center rounded-md ${
+              layer.bold ? "bg-rose text-white" : "bg-bg border border-border"
+            }`}
+          >
+            <Bold size={12} strokeWidth={2} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onLayerChange({ italic: !layer.italic })}
+            aria-label="Italic"
+            className={`w-7 h-7 grid place-items-center rounded-md ${
+              layer.italic ? "bg-rose text-white" : "bg-bg border border-border"
+            }`}
+          >
+            <Italic size={12} strokeWidth={2} />
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <div className="text-xs text-muted mb-1">Color</div>
+        <div className="flex flex-wrap gap-2">
+          {TEXT_COLOR_PRESETS.map((color) => (
+            <button
+              key={color}
+              type="button"
+              onClick={() => onLayerChange({ color })}
+              aria-label={`Color ${color}`}
+              className={`w-7 h-7 rounded-full border ${
+                layer.color.toLowerCase() === color.toLowerCase()
+                  ? "border-rose ring-2 ring-rose/30"
+                  : "border-border"
+              }`}
+              style={{ backgroundColor: color }}
+            />
+          ))}
+          <input
+            type="color"
+            value={layer.color}
+            onChange={(e) => onLayerChange({ color: e.target.value })}
+            aria-label="Custom color"
+            className="w-7 h-7 rounded-full border border-border cursor-pointer"
+          />
+        </div>
       </div>
     </div>
   );

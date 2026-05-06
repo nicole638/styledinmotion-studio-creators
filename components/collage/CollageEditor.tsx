@@ -1,17 +1,32 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Send, Save, RotateCcw } from "lucide-react";
+import {
+  Search,
+  Send,
+  Save,
+  RotateCcw,
+  Type,
+  ImagePlus,
+} from "lucide-react";
 import { CollageCanvas } from "./CollageCanvas";
 import {
   CANVAS_SIZE,
-  type CollageItemTransform,
-  type CollageLayout,
+  type CutoutLayer,
+  type Layer,
+  type PhotoLayer,
   type TemplateId,
   TEMPLATE_OPTIONS,
+  getTemplateBackground,
+  makeDefaultTextLayer,
+  newLayerId,
+  type CollageLayout,
 } from "@/types/collage";
-import { applyTemplate } from "@/lib/collage/templates";
+import {
+  applyTemplate,
+  applyTemplateToCutouts,
+} from "@/lib/collage/templates";
 import { renderCollageToPng } from "@/lib/collage/render";
 import { saveCollageAction } from "@/lib/collage/mutations";
 import type { ClosetItem } from "@/types/closet";
@@ -24,11 +39,14 @@ interface Props {
   cutoutItems: ClosetItem[];
 }
 
-const MAX_PIECES = 8;
+const MAX_LAYERS = 12;
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
 export function CollageEditor({ creatorId, cutoutItems }: Props) {
   const router = useRouter();
-  const itemsById = useMemo(() => {
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const cutoutsById = useMemo(() => {
     const m = new Map<string, ClosetItem>();
     for (const it of cutoutItems) m.set(it.id, it);
     return m;
@@ -36,10 +54,15 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
 
   const [title, setTitle] = useState("");
   const [template, setTemplate] = useState<TemplateId>("editorial");
-  const [items, setItems] = useState<CollageItemTransform[]>([]);
+  const [background, setBackground] = useState(
+    getTemplateBackground("editorial"),
+  );
+  const [bgManuallyChanged, setBgManuallyChanged] = useState(false);
+  const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickerSearch, setPickerSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [busy, setBusy] = useState<"draft" | "publish" | null>(null);
   const [, startTransition] = useTransition();
 
@@ -55,81 +78,173 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
     });
   }, [cutoutItems, pickerSearch]);
 
-  const selectedIds = useMemo(
-    () => new Set(items.map((it) => it.itemId)),
-    [items],
-  );
+  const cutoutLayerByItemId = useMemo(() => {
+    const m = new Map<string, CutoutLayer>();
+    for (const l of layers) {
+      if (l.kind === "cutout") m.set(l.itemId, l);
+    }
+    return m;
+  }, [layers]);
 
-  const handlePickerToggle = (item: ClosetItem) => {
-    if (selectedIds.has(item.id)) {
-      setItems((prev) => prev.filter((it) => it.itemId !== item.id));
-      if (selectedId === item.id) setSelectedId(null);
+  const nextZIndex = () =>
+    layers.reduce((max, l) => Math.max(max, l.zIndex), -1) + 1;
+
+  // ────────── Cutout picker ──────────
+
+  const handleCutoutToggle = (item: ClosetItem) => {
+    const existing = cutoutLayerByItemId.get(item.id);
+    if (existing) {
+      removeLayer(existing.id);
       return;
     }
-    if (items.length >= MAX_PIECES) return;
-    // Append using current template's next-position rule
-    const allIds = [...items.map((it) => it.itemId), item.id];
-    const layout = applyTemplate(template, allIds);
-    setItems(layout);
-    setSelectedId(item.id);
+    if (layers.length >= MAX_LAYERS) return;
+    // Add to existing layout via template positioning rules
+    const cutoutIds = [
+      ...layers.filter((l): l is CutoutLayer => l.kind === "cutout").map((l) => l.itemId),
+      item.id,
+    ];
+    const positionedCutouts = applyTemplateToCutouts(template, cutoutIds);
+    // Preserve other (photo + text) layers untouched
+    const others = layers.filter((l) => l.kind !== "cutout");
+    setLayers([...positionedCutouts, ...others]);
+    // Select the newly added cutout
+    const added = positionedCutouts.find((c) => c.itemId === item.id);
+    if (added) setSelectedId(added.id);
   };
+
+  // ────────── Template ──────────
 
   const handleApplyTemplate = (next: TemplateId) => {
     setTemplate(next);
-    setItems(applyTemplate(next, items.map((it) => it.itemId)));
+    setLayers((prev) => applyTemplate(next, prev));
+    if (!bgManuallyChanged) setBackground(getTemplateBackground(next));
   };
 
   const handleResetPositions = () => {
-    setItems(applyTemplate(template, items.map((it) => it.itemId)));
+    setLayers((prev) => applyTemplate(template, prev));
   };
 
-  const handleTransformChange = (
-    id: string,
-    next: Partial<CollageItemTransform>,
-  ) => {
-    setItems((prev) =>
-      prev.map((it) => (it.itemId === id ? { ...it, ...next } : it)),
+  // ────────── Layer ops ──────────
+
+  const handleLayerChange = (id: string, next: Partial<Layer>) => {
+    setLayers((prev) =>
+      prev.map((l) => (l.id === id ? ({ ...l, ...next } as Layer) : l)),
     );
   };
 
-  const handleRemove = (id: string) => {
-    setItems((prev) => prev.filter((it) => it.itemId !== id));
+  const removeLayer = (id: string) => {
+    setLayers((prev) => prev.filter((l) => l.id !== id));
+    if (selectedId === id) setSelectedId(null);
   };
 
   const handleZIndexShift = (id: string, direction: "up" | "down") => {
-    setItems((prev) => {
+    setLayers((prev) => {
       const sorted = [...prev].sort((a, b) => a.zIndex - b.zIndex);
-      const idx = sorted.findIndex((it) => it.itemId === id);
+      const idx = sorted.findIndex((l) => l.id === id);
       if (idx < 0) return prev;
       const target = direction === "up" ? idx + 1 : idx - 1;
       if (target < 0 || target >= sorted.length) return prev;
       [sorted[idx], sorted[target]] = [sorted[target], sorted[idx]];
-      // Re-number z-indexes 0..n
-      return sorted.map((it, i) => ({ ...it, zIndex: i }));
+      return sorted.map((l, i) => ({ ...l, zIndex: i }) as Layer);
     });
   };
 
+  // ────────── Add text ──────────
+
+  const handleAddText = () => {
+    if (layers.length >= MAX_LAYERS) {
+      setError("Maximum 12 layers per collage.");
+      return;
+    }
+    const t = makeDefaultTextLayer(nextZIndex());
+    setLayers((prev) => [...prev, t]);
+    setSelectedId(t.id);
+  };
+
+  // ────────── Add photo ──────────
+
+  const handlePickPhoto = () => photoInputRef.current?.click();
+
+  const handlePhotoUpload = async (file: File) => {
+    setError(null);
+    if (file.size > MAX_PHOTO_BYTES) {
+      setError("Photo must be under 10 MB.");
+      return;
+    }
+    if (layers.length >= MAX_LAYERS) {
+      setError("Maximum 12 layers per collage.");
+      return;
+    }
+    setPhotoUploading(true);
+    try {
+      const supabase = createClient();
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+      const safeExt = /^[a-z0-9]+$/.test(ext) ? ext : "jpg";
+      const random = Math.random().toString(36).slice(2, 10);
+      const path = `${creatorId}/collage-photo-${Date.now()}-${random}.${safeExt}`;
+
+      const { error: upErr } = await supabase.storage
+        .from("look-photos")
+        .upload(path, file, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: file.type || `image/${safeExt}`,
+        });
+      if (upErr) {
+        setError(`Upload failed: ${upErr.message}`);
+        return;
+      }
+      const { data: urlData } = supabase.storage
+        .from("look-photos")
+        .getPublicUrl(path);
+
+      const photo: PhotoLayer = {
+        id: newLayerId(),
+        kind: "photo",
+        photoUrl: urlData.publicUrl,
+        x: CANVAS_SIZE / 2,
+        y: CANVAS_SIZE / 2,
+        scale: 1,
+        rotation: 0,
+        zIndex: nextZIndex(),
+      };
+      setLayers((prev) => [...prev, photo]);
+      setSelectedId(photo.id);
+    } catch (e: any) {
+      setError(e?.message ?? "Upload failed");
+    } finally {
+      setPhotoUploading(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  };
+
+  // ────────── Save ──────────
+
   const handleSave = (publish: boolean) => {
-    if (items.length === 0) {
-      setError("Add at least one piece to the collage.");
+    if (layers.length === 0) {
+      setError("Add at least one piece, photo, or text layer.");
       return;
     }
     setError(null);
     setBusy(publish ? "publish" : "draft");
     startTransition(async () => {
       try {
-        // 1. Render to PNG client-side
-        const inputs = items.map((tr) => {
-          const ci = itemsById.get(tr.itemId);
-          return {
-            itemId: tr.itemId,
-            imageUrl: ci?.photoUrl ?? "",
-            transform: tr,
-          };
-        });
-        const blob = await renderCollageToPng(inputs);
+        // Build the cutout-URL map for the renderer
+        const cutoutUrls = new Map<string, string>();
+        for (const l of layers) {
+          if (l.kind === "cutout") {
+            const url = cutoutsById.get(l.itemId)?.photoUrl;
+            if (url) cutoutUrls.set(l.itemId, url);
+          }
+        }
 
-        // 2. Upload to look-photos bucket via authenticated session
+        const blob = await renderCollageToPng({
+          layers,
+          cutoutUrls,
+          background,
+        });
+
+        // Upload flattened PNG to look-photos
         const supabase = createClient();
         const random = Math.random().toString(36).slice(2, 10);
         const path = `${creatorId}/collage-${Date.now()}-${random}.png`;
@@ -148,8 +263,11 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
           .from("look-photos")
           .getPublicUrl(path);
 
-        // 3. Persist look + look_items via server action
-        const layout: CollageLayout = { template, items };
+        const layout: CollageLayout = {
+          template,
+          background,
+          layers,
+        };
         const r = await saveCollageAction({
           title,
           coverPhotoUrl: urlData.publicUrl,
@@ -166,9 +284,7 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
         router.refresh();
       } catch (e: any) {
         setBusy(null);
-        setError(
-          e?.message ?? "Something went wrong rendering the collage.",
-        );
+        setError(e?.message ?? "Something went wrong rendering the collage.");
       }
     });
   };
@@ -180,12 +296,13 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
       {/* Left: canvas + controls */}
       <div>
         <CollageCanvas
-          items={items}
-          itemsById={itemsById}
+          layers={layers}
+          background={background}
+          cutoutsById={cutoutsById}
           selectedId={selectedId}
           onSelectionChange={setSelectedId}
-          onTransformChange={handleTransformChange}
-          onRemove={handleRemove}
+          onLayerChange={handleLayerChange}
+          onRemove={removeLayer}
           onZIndexShift={handleZIndexShift}
         />
         <p className="mt-2 text-xs text-muted text-center">
@@ -193,7 +310,7 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
         </p>
       </div>
 
-      {/* Right: meta + template + picker */}
+      {/* Right: meta + add layers + picker + save */}
       <div className="space-y-6">
         {/* Title */}
         <label className="block">
@@ -208,16 +325,56 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
           />
         </label>
 
+        {/* Add to canvas */}
+        <div>
+          <div className="text-xs uppercase tracking-widest text-muted mb-2">
+            Add to canvas
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleAddText}
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-1.5 text-sm hover:border-rose"
+            >
+              <Type size={14} strokeWidth={2} />
+              Add text
+            </button>
+            <button
+              type="button"
+              onClick={handlePickPhoto}
+              disabled={photoUploading}
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-1.5 text-sm hover:border-rose disabled:opacity-60"
+            >
+              <ImagePlus size={14} strokeWidth={2} />
+              {photoUploading ? "Uploading…" : "Add photo"}
+            </button>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handlePhotoUpload(f);
+              }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            Photos can be whole-look shots — drag/scale to fill the canvas
+            as a backdrop, then layer cutouts on top.
+          </p>
+        </div>
+
         {/* Template */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs uppercase tracking-widest text-muted">
-              Template
+              Template + background
             </div>
             <button
               type="button"
               onClick={handleResetPositions}
-              disabled={items.length === 0}
+              disabled={layers.length === 0}
               className="inline-flex items-center gap-1 text-xs text-muted hover:text-text disabled:opacity-40"
             >
               <RotateCcw size={11} strokeWidth={2} />
@@ -232,9 +389,10 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
                 onClick={() => handleApplyTemplate(opt.id)}
                 className={`text-left p-3 rounded-2xl border transition-colors ${
                   template === opt.id
-                    ? "border-rose bg-rose/10"
-                    : "border-border bg-card hover:border-rose"
+                    ? "border-rose ring-2 ring-rose/20"
+                    : "border-border hover:border-rose"
                 }`}
+                style={{ backgroundColor: opt.background }}
               >
                 <div className="text-sm font-medium">{opt.label}</div>
                 <div className="mt-1 text-xs text-muted leading-snug">
@@ -243,12 +401,40 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
               </button>
             ))}
           </div>
+          <div className="mt-3 flex items-center gap-2">
+            <span className="text-xs uppercase tracking-widest text-muted">
+              Custom bg
+            </span>
+            <input
+              type="color"
+              value={background}
+              onChange={(e) => {
+                setBackground(e.target.value);
+                setBgManuallyChanged(true);
+              }}
+              aria-label="Custom background color"
+              className="w-7 h-7 rounded-full border border-border cursor-pointer"
+            />
+            {bgManuallyChanged ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setBackground(getTemplateBackground(template));
+                  setBgManuallyChanged(false);
+                }}
+                className="text-xs text-muted hover:text-text underline underline-offset-2"
+              >
+                Reset to template
+              </button>
+            ) : null}
+          </div>
         </div>
 
-        {/* Picker */}
+        {/* Cutout picker */}
         <div>
           <div className="text-xs uppercase tracking-widest text-muted mb-2">
-            Pieces ({items.length}/{MAX_PIECES})
+            Closet pieces ({layers.filter((l) => l.kind === "cutout").length}/
+            {MAX_LAYERS})
           </div>
           {cutoutItems.length === 0 ? (
             <div className="rounded-2xl border border-border bg-card p-6 text-center">
@@ -275,13 +461,13 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
               </div>
               <ul className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[420px] overflow-y-auto">
                 {filteredCutouts.map((item) => {
-                  const picked = selectedIds.has(item.id);
-                  const atMax = items.length >= MAX_PIECES && !picked;
+                  const picked = cutoutLayerByItemId.has(item.id);
+                  const atMax = layers.length >= MAX_LAYERS && !picked;
                   return (
                     <li key={item.id}>
                       <button
                         type="button"
-                        onClick={() => handlePickerToggle(item)}
+                        onClick={() => handleCutoutToggle(item)}
                         disabled={atMax}
                         className={`group block w-full rounded-xl border overflow-hidden transition-colors disabled:opacity-40 ${
                           picked
@@ -315,12 +501,12 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
           </div>
         ) : null}
 
-        {/* Save buttons */}
+        {/* Save */}
         <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-border">
           <button
             type="button"
             onClick={() => handleSave(true)}
-            disabled={isBusy || items.length === 0}
+            disabled={isBusy || layers.length === 0}
             className="inline-flex items-center gap-2 rounded-full bg-rose text-white px-5 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
           >
             <Send size={14} strokeWidth={2} />
@@ -329,7 +515,7 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
           <button
             type="button"
             onClick={() => handleSave(false)}
-            disabled={isBusy || items.length === 0}
+            disabled={isBusy || layers.length === 0}
             className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-5 py-2.5 text-sm hover:border-rose disabled:opacity-60 transition-colors"
           >
             <Save size={14} strokeWidth={2} />
