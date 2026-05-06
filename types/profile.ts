@@ -34,6 +34,8 @@ export interface CreatorProfile {
   location: string;
   socials: SocialHandle[];
   measurements: ProfileMeasurements;
+  /** Amazon Associates tag for Creator Connections — e.g. "mycreator-20" */
+  amazonAssociatesTag: string;
   // Read-only badges
   isBetaCreator: boolean;
   isFoundingCreator: boolean;
@@ -68,6 +70,7 @@ export interface CreatorProfileRow {
   shoe_size: string | null;
   bra_size: string | null;
   body_type_self_tags: string[] | null;
+  amazon_associates_tag: string | null;
   is_beta_creator: boolean;
   is_founding_creator: boolean;
   subscription_status: string;
@@ -118,6 +121,7 @@ export function rowToProfile(row: CreatorProfileRow): CreatorProfile {
       braSize: row.bra_size ?? "",
       bodyTypeSelfTags: row.body_type_self_tags ?? [],
     },
+    amazonAssociatesTag: row.amazon_associates_tag ?? "",
     isBetaCreator: row.is_beta_creator,
     isFoundingCreator: row.is_founding_creator,
     subscriptionStatus: row.subscription_status,

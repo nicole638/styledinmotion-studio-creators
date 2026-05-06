@@ -25,6 +25,7 @@ export interface ProfileDraft {
   shoeSize: string;
   braSize: string;
   bodyTypeSelfTags: string[];
+  amazonAssociatesTag: string;
 }
 
 export interface SaveResult {
@@ -70,6 +71,19 @@ export async function updateProfileAction(
     return { ok: false, error: "Weight must be between 30 and 250 kg." };
   }
 
+  // Amazon Associates tag — light validation. Multiple regional store
+  // suffixes are valid (-20 US, -21 UK, -22 ES, etc.) and the format may
+  // evolve; we just enforce non-whitespace alphanumeric+dash so paste
+  // mistakes get caught at the door.
+  const amazonTag = draft.amazonAssociatesTag.trim().toLowerCase();
+  if (amazonTag && !/^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/.test(amazonTag)) {
+    return {
+      ok: false,
+      error:
+        "Amazon Associates tag should be lowercase letters, numbers, and dashes (e.g. 'mycreator-20').",
+    };
+  }
+
   // Look up handles by platform for column writes
   const handle = (p: SocialPlatform) =>
     draft.socials.find((s) => s.platform === p)?.handle.trim() ?? "";
@@ -100,6 +114,7 @@ export async function updateProfileAction(
     shoe_size: draft.shoeSize.trim() || null,
     bra_size: draft.braSize.trim() || null,
     body_type_self_tags: draft.bodyTypeSelfTags,
+    amazon_associates_tag: amazonTag || null,
     updated_at: new Date().toISOString(),
   };
 

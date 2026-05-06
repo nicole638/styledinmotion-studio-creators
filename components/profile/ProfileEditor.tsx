@@ -56,6 +56,7 @@ export function ProfileEditor({ initial }: Props) {
   const [bodyTags, setBodyTags] = useState<string[]>(
     initial.measurements.bodyTypeSelfTags,
   );
+  const [amazonTag, setAmazonTag] = useState(initial.amazonAssociatesTag);
 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -120,6 +121,7 @@ export function ProfileEditor({ initial }: Props) {
         shoeSize,
         braSize,
         bodyTypeSelfTags: bodyTags,
+        amazonAssociatesTag: amazonTag,
       };
       const r = await updateProfileAction(draft);
       if (!r.ok) {
@@ -387,6 +389,26 @@ export function ProfileEditor({ initial }: Props) {
             <TextInput value={braSize} onChange={setBraSize} placeholder="32B" />
           </Field>
         </div>
+      </section>
+
+      {/* Affiliate */}
+      <section className="space-y-4">
+        <SectionTitle>Affiliate</SectionTitle>
+        <p className="text-xs text-muted -mt-2">
+          For creators in Amazon's Creator Connections program. We append
+          your tag to Amazon links shoppers click on your looks so the
+          commissions attribute to your Associates account.
+        </p>
+        <Field
+          label="Amazon Associates tag"
+          hint="Lowercase letters, numbers, and dashes — e.g. mycreator-20. Leave blank if you don't have an Associates account yet."
+        >
+          <TextInput
+            value={amazonTag}
+            onChange={(v) => setAmazonTag(v.toLowerCase())}
+            placeholder="mycreator-20"
+          />
+        </Field>
       </section>
 
       {/* Status messages + save */}
