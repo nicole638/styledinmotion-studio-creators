@@ -257,6 +257,57 @@ export async function archiveClosetItemAction(
 }
 
 /**
+ * Permanently delete a closet item. Refuses if the item is referenced by
+ * any look_items rows — those would orphan published looks. Caller should
+ * fall back to archiveClosetItemAction in that case (UI surfaces this as
+ * "this piece is in {N} look(s) — archive instead").
+ *
+ * RLS on creator_items + the eq("creator_id", user.id) check ensure
+ * creators can only delete their own items.
+ */
+export interface DeleteResult extends SaveResult {
+  /** Number of looks that reference this item (only set when ok=false because of references). */
+  referencedByLooks?: number;
+}
+
+export async function deleteClosetItemAction(
+  itemId: string,
+): Promise<DeleteResult> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  // Check whether this item is in any looks.
+  const { count: lookRefs, error: countErr } = await supabase
+    .from("look_items")
+    .select("id", { count: "exact", head: true })
+    .eq("creator_item_id", itemId);
+
+  if (countErr) return { ok: false, error: countErr.message };
+
+  if ((lookRefs ?? 0) > 0) {
+    return {
+      ok: false,
+      referencedByLooks: lookRefs ?? 0,
+      error: `This piece is tagged in ${lookRefs} look${lookRefs === 1 ? "" : "s"}. Archive it instead, or remove it from those looks first.`,
+    };
+  }
+
+  const { error } = await supabase
+    .from("creator_items")
+    .delete()
+    .eq("id", itemId)
+    .eq("creator_id", user.id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/closet");
+  return { ok: true, itemId };
+}
+
+/**
  * Persist a creator-edited crop. The client uploads the cropped PNG to
  * the item-photos bucket first (gets a public URL), then calls this to
  * point creator_items.photo_url at the new asset. We leave

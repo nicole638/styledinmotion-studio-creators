@@ -2,12 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { RefreshCw, Archive, ArchiveRestore, Crop } from "lucide-react";
+import { RefreshCw, Archive, ArchiveRestore, Crop, Trash2 } from "lucide-react";
 import {
   updateClosetItemAction,
   archiveClosetItemAction,
   refetchItemPhotoAction,
   applyEditedPhotoAction,
+  deleteClosetItemAction,
 } from "@/lib/closet/mutations";
 import type { ClosetItem } from "@/types/closet";
 import { PhotoFrameEditor } from "@/components/closet/PhotoFrameEditor";
@@ -43,6 +44,8 @@ export function EditItemForm({ item }: { item: ClosetItem }) {
   const [isSaving, startSave] = useTransition();
   const [isRefetching, startRefetch] = useTransition();
   const [isArchiving, startArchive] = useTransition();
+  const [isDeleting, startDelete] = useTransition();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const [editingPhoto, setEditingPhoto] = useState(false);
   const [applyingCrop, setApplyingCrop] = useState(false);
@@ -135,6 +138,21 @@ export function EditItemForm({ item }: { item: ClosetItem }) {
         router.refresh();
       } else {
         setError(r.error ?? "Could not update archive.");
+      }
+    });
+  };
+
+  const handleDelete = () => {
+    setError(null);
+    setNotice(null);
+    startDelete(async () => {
+      const r = await deleteClosetItemAction(item.id);
+      if (r.ok) {
+        router.push("/closet");
+        router.refresh();
+      } else {
+        setConfirmingDelete(false);
+        setError(r.error ?? "Could not delete.");
       }
     });
   };
@@ -297,6 +315,48 @@ export function EditItemForm({ item }: { item: ClosetItem }) {
             </>
           )}
         </button>
+
+        {/* Permanent delete — destructive, requires confirmation. Refuses
+            if the item is referenced by any look_items rows; UI surfaces
+            that error and points the user toward Archive instead. */}
+        {!confirmingDelete ? (
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setNotice(null);
+              setConfirmingDelete(true);
+            }}
+            disabled={isDeleting}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#F4C7BF] bg-[#FBE9E5] text-[#B53D2A] text-sm hover:border-[#B53D2A] disabled:opacity-60 transition-colors ml-auto"
+          >
+            <Trash2 size={14} strokeWidth={2} />
+            Delete
+          </button>
+        ) : (
+          <div className="ml-auto flex items-center gap-2 rounded-full border border-[#F4C7BF] bg-[#FBE9E5] px-3 py-1.5">
+            <span className="text-xs text-[#B53D2A] font-medium">
+              Delete forever?
+            </span>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#B53D2A] text-white text-xs font-medium hover:opacity-90 disabled:opacity-60"
+            >
+              <Trash2 size={11} strokeWidth={2.5} />
+              {isDeleting ? "Deleting…" : "Yes, delete"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(false)}
+              disabled={isDeleting}
+              className="text-xs text-[#B53D2A] px-2 py-1 hover:underline disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
     </form>
   );
