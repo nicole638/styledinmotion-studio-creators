@@ -10,6 +10,7 @@ import {
   type AddItemDraft,
   type BulkScrapeRow,
 } from "@/lib/closet/mutations";
+import { CampaignMatchBanner } from "@/components/closet/CampaignMatchBanner";
 
 const CATEGORIES = [
   "Top",
@@ -114,6 +115,8 @@ function SingleUrlForm() {
             Paste a product link. We'll pull the photo, brand, and price.
           </p>
         </div>
+
+        <CampaignMatchBanner url={url} />
 
         {error ? (
           <div className="text-sm text-[#B53D2A] bg-[#FBE9E5] border border-[#F4C7BF] rounded-2xl px-4 py-3">

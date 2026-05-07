@@ -3,8 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { Sparkles, Camera, Layers, FileEdit, User, ArrowUpRight } from "lucide-react";
 import { fetchAmazonSetupAcknowledged } from "@/lib/profile/queries";
 import { AmazonSetupBanner } from "@/components/AmazonSetupBanner";
+import { ActiveCampaignsWidget } from "@/components/dashboard/ActiveCampaignsWidget";
 
 export const metadata = { title: "Dashboard" };
+
+// Always fetch fresh — campaigns + counts shouldn't be statically cached.
+export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const supabase = createClient();
@@ -65,6 +69,8 @@ export default async function DashboardPage() {
           href="/looks?view=draft"
         />
       </div>
+
+      <ActiveCampaignsWidget />
 
       <div className="mt-12 editorial-divider" />
 
