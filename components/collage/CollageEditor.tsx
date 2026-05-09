@@ -27,6 +27,11 @@ import {
   applyTemplate,
   applyTemplateToCutouts,
 } from "@/lib/collage/templates";
+import {
+  applyLayoutToCutouts,
+  type LayoutTemplate,
+} from "@/lib/collage/layouts";
+import { LayoutCarousel } from "./LayoutCarousel";
 import { renderCollageToPng } from "@/lib/collage/render";
 import { saveCollageAction } from "@/lib/collage/mutations";
 import type { ClosetItem } from "@/types/closet";
@@ -66,6 +71,13 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
   const [busy, setBusy] = useState<"draft" | "publish" | null>(null);
   const [, startTransition] = useTransition();
 
+  // Phase 3 layout-discovery state. selectedLayoutId is just for highlighting
+  // the active card — the actual positions live on the cutout layers themselves
+  // and can be edited freely after selection. layoutSeed reshuffles the
+  // algorithmic "Mix" variants without touching the curated templates.
+  const [selectedLayoutId, setSelectedLayoutId] = useState<string | null>(null);
+  const [layoutSeed, setLayoutSeed] = useState(0);
+
   const filteredCutouts = useMemo(() => {
     const q = pickerSearch.trim().toLowerCase();
     if (!q) return cutoutItems;
@@ -95,6 +107,10 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
     const existing = cutoutLayerByItemId.get(item.id);
     if (existing) {
       removeLayer(existing.id);
+      // The current layout was sized for the previous item count, so its id
+      // won't match any card in the carousel after this change. Clear it so
+      // the highlight isn't misleading.
+      setSelectedLayoutId(null);
       return;
     }
     if (layers.length >= MAX_LAYERS) return;
@@ -107,6 +123,7 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
     // Preserve other (photo + text) layers untouched
     const others = layers.filter((l) => l.kind !== "cutout");
     setLayers([...positionedCutouts, ...others]);
+    setSelectedLayoutId(null);
     // Select the newly added cutout
     const added = positionedCutouts.find((c) => c.itemId === item.id);
     if (added) setSelectedId(added.id);
@@ -122,6 +139,27 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
 
   const handleResetPositions = () => {
     setLayers((prev) => applyTemplate(template, prev));
+    setSelectedLayoutId(null);
+  };
+
+  // Phase 3 — apply a LayoutTemplate from the carousel to the current cutouts.
+  // Photo and text layers are preserved untouched (creators position those
+  // deliberately and shouldn't lose their work when changing layouts).
+  const handleApplyLayout = (layout: LayoutTemplate) => {
+    setLayers((prev) => {
+      const cutouts = prev.filter((l): l is CutoutLayer => l.kind === "cutout");
+      const others = prev.filter((l) => l.kind !== "cutout");
+      const repositioned = applyLayoutToCutouts(layout, cutouts);
+      return [...repositioned, ...others];
+    });
+    setSelectedLayoutId(layout.id);
+  };
+
+  const handleReshuffleLayouts = () => {
+    setLayoutSeed((s) => s + 1);
+    // If the current selection was algorithmic, drop it — reshuffling means
+    // the previously-selected layout id no longer exists in the new set.
+    if (selectedLayoutId?.startsWith("algo-")) setSelectedLayoutId(null);
   };
 
   // ────────── Layer ops ──────────
@@ -290,11 +328,21 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
   };
 
   const isBusy = busy !== null;
+  const cutoutCount = layers.filter((l) => l.kind === "cutout").length;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-8 items-start">
-      {/* Left: canvas + controls */}
-      <div>
+      {/* Left: layout carousel + canvas + controls */}
+      <div className="space-y-3">
+        {cutoutCount > 0 && cutoutCount <= 6 ? (
+          <LayoutCarousel
+            itemCount={cutoutCount}
+            selectedLayoutId={selectedLayoutId}
+            onSelect={handleApplyLayout}
+            seed={layoutSeed}
+            onReshuffle={handleReshuffleLayouts}
+          />
+        ) : null}
         <CollageCanvas
           layers={layers}
           background={background}
@@ -305,7 +353,7 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
           onRemove={removeLayer}
           onZIndexShift={handleZIndexShift}
         />
-        <p className="mt-2 text-xs text-muted text-center">
+        <p className="text-xs text-muted text-center">
           Canvas is 1080×1080 — saved at full resolution.
         </p>
       </div>
