@@ -6,12 +6,16 @@ import {
   type ClosetItemRow,
   rowToClosetItem,
 } from "@/types/closet";
+import { fetchCreatorBrands } from "@/lib/closet/queries";
 import { EditItemForm } from "./EditItemForm";
 
 export const metadata = { title: "Edit piece" };
 
+// fetch_status + fetch_error included so the new async-pipeline columns
+// flow through rowToClosetItem cleanly. Pre-pipeline rows have NULL
+// fetch_status which the type helper coerces to 'complete'.
 const COLUMNS =
-  "id, name, brand, category, price, url, affiliate_url, photo_url, cutout_photo_url, original_photo_url, archived, default_worn_size, created_at";
+  "id, name, brand, category, price, url, affiliate_url, photo_url, cutout_photo_url, original_photo_url, archived, default_worn_size, created_at, fetch_status, fetch_error";
 
 export default async function ClosetItemEditPage({
   params,
@@ -24,12 +28,15 @@ export default async function ClosetItemEditPage({
   } = await supabase.auth.getUser();
   if (!user) notFound();
 
-  const { data, error } = await supabase
-    .from("creator_items")
-    .select(COLUMNS)
-    .eq("id", params.id)
-    .eq("creator_id", user.id)
-    .maybeSingle();
+  const [{ data, error }, brands] = await Promise.all([
+    supabase
+      .from("creator_items")
+      .select(COLUMNS)
+      .eq("id", params.id)
+      .eq("creator_id", user.id)
+      .maybeSingle(),
+    fetchCreatorBrands(),
+  ]);
 
   if (error || !data) notFound();
 
@@ -59,7 +66,7 @@ export default async function ClosetItemEditPage({
       <div className="mt-10 editorial-divider" />
 
       <div className="mt-8">
-        <EditItemForm item={item} />
+        <EditItemForm item={item} brandSuggestions={brands} />
       </div>
     </div>
   );

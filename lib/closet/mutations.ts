@@ -22,6 +22,148 @@ export interface SaveResult {
   itemId?: string;
 }
 
+// ─── Async/queued add (post-insert reveal) ─────────────────────────────
+//
+// Replaces the synchronous scrape-then-preview flow. The client just
+// INSERTs a row with fetch_status='pending'; a Postgres trigger fires the
+// scrape-product Edge Function, which populates name/brand/price/photo and
+// flips fetch_status to 'complete' (or 'partial'/'failed'). The closet
+// page subscribes to Realtime for live updates.
+
+export interface QuickAddResult {
+  ok: boolean;
+  error?: string;
+  itemId?: string;
+}
+
+/**
+ * Insert a single placeholder row from just a URL. The trigger handles the
+ * scrape; the closet UI shows a "Fetching…" card until the EF writes back.
+ * Returns the new item id so the client can optimistically navigate or scroll.
+ */
+export async function quickAddItemPendingAction(
+  url: string,
+): Promise<QuickAddResult> {
+  if (!url || !/^https?:\/\//i.test(url.trim())) {
+    return { ok: false, error: "Enter a full URL starting with http(s)://" };
+  }
+  const cleaned = url.trim();
+
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { data, error } = await supabase
+    .from("creator_items")
+    .insert({
+      creator_id: user.id,
+      name: safeName("", cleaned),
+      url: cleaned,
+      fetch_status: "pending",
+      archived: false,
+    })
+    .select("id")
+    .single();
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/closet");
+  return { ok: true, itemId: data.id };
+}
+
+export interface BulkQuickAddResult {
+  ok: boolean;
+  inserted: number;
+  error?: string;
+}
+
+/**
+ * Bulk paste variant: insert many pending rows in one statement, all under
+ * the same creator. The trigger fires per-row, so each one independently
+ * scrapes in the background. UI shows them all as "Fetching…" cards.
+ */
+export async function bulkQuickAddItemsPendingAction(
+  urls: string[],
+): Promise<BulkQuickAddResult> {
+  const cleaned = Array.from(
+    new Set(
+      urls
+        .map((u) => u.trim())
+        .filter((u) => /^https?:\/\//i.test(u)),
+    ),
+  );
+  if (cleaned.length === 0) {
+    return { ok: false, inserted: 0, error: "No valid URLs to insert." };
+  }
+  if (cleaned.length > 30) {
+    return {
+      ok: false,
+      inserted: 0,
+      error: "Max 30 URLs per batch. Paste fewer.",
+    };
+  }
+
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, inserted: 0, error: "Not signed in." };
+
+  const rows = cleaned.map((url) => ({
+    creator_id: user.id,
+    name: safeName("", url),
+    url,
+    fetch_status: "pending",
+    archived: false,
+  }));
+
+  const { error, data } = await supabase
+    .from("creator_items")
+    .insert(rows)
+    .select("id");
+
+  if (error) return { ok: false, inserted: 0, error: error.message };
+
+  revalidatePath("/closet");
+  return { ok: true, inserted: data?.length ?? 0 };
+}
+
+/**
+ * Manual re-fetch: flip an existing item's fetch_status back to 'pending'
+ * to retrigger the scrape-product EF. Useful when a previous scrape failed
+ * or a merchant updated their photo / metadata.
+ */
+export async function refetchItemAsyncAction(
+  itemId: string,
+): Promise<SaveResult> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { error } = await supabase
+    .from("creator_items")
+    .update({
+      fetch_status: "pending",
+      fetch_started_at: null,
+      fetch_completed_at: null,
+      fetch_error: null,
+    })
+    .eq("id", itemId)
+    .eq("creator_id", user.id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/closet");
+  revalidatePath(`/closet/${itemId}`);
+  return { ok: true, itemId };
+}
+
+// ─── Synchronous (legacy) add — kept during the transition ─────────────
+
 /** Insert a single closet item from a fully-formed draft. */
 export async function addClosetItemAction(
   draft: AddItemDraft,

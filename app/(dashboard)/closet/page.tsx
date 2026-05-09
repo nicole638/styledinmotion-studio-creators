@@ -4,7 +4,8 @@ import {
   fetchClosetCounts,
   fetchClosetItems,
 } from "@/lib/closet/queries";
-import { ItemCard } from "@/components/closet/ItemCard";
+import { createClient } from "@/lib/supabase/server";
+import { ClosetItemsList } from "@/components/closet/ClosetItemsList";
 import { ClosetToolbar } from "@/components/closet/ClosetToolbar";
 
 export const metadata = { title: "Closet" };
@@ -24,7 +25,9 @@ export default async function ClosetPage({
   const search = searchParams.q ?? "";
   const category = searchParams.category ?? "";
 
-  const [items, counts] = await Promise.all([
+  const supabase = createClient();
+  const [{ data: { user } }, items, counts] = await Promise.all([
+    supabase.auth.getUser(),
     fetchClosetItems({
       archivedOnly: view === "archived",
       search: search || undefined,
@@ -59,15 +62,13 @@ export default async function ClosetPage({
       <div className="mt-8">
         {items.length === 0 ? (
           <EmptyState view={view} hasFilters={Boolean(search || category)} />
-        ) : (
-          <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {items.map((item) => (
-              <li key={item.id}>
-                <ItemCard item={item} />
-              </li>
-            ))}
-          </ul>
-        )}
+        ) : user ? (
+          <ClosetItemsList
+            initialItems={items}
+            creatorId={user.id}
+            archivedView={view === "archived"}
+          />
+        ) : null}
       </div>
     </div>
   );

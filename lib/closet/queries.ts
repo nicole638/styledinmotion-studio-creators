@@ -6,7 +6,7 @@ import {
 } from "@/types/closet";
 
 const ITEM_COLUMNS =
-  "id, name, brand, category, price, url, affiliate_url, photo_url, cutout_photo_url, original_photo_url, archived, default_worn_size, created_at";
+  "id, name, brand, category, price, url, affiliate_url, photo_url, cutout_photo_url, original_photo_url, archived, default_worn_size, created_at, fetch_status, fetch_error";
 
 export interface FetchClosetOptions {
   archivedOnly?: boolean;
@@ -54,6 +54,43 @@ export async function fetchClosetItems(
   }
 
   return ((data ?? []) as ClosetItemRow[]).map(rowToClosetItem);
+}
+
+/**
+ * Distinct brands the signed-in creator has previously used. Powers the
+ * brand-autocomplete on Add/Edit Item forms — most creators reuse a small
+ * set of brands across many items, so a typeahead pulled from their own
+ * history is more useful than any curated global brand list.
+ *
+ * Sorted alphabetically, case-insensitive. Empty/null brands filtered out.
+ */
+export async function fetchCreatorBrands(): Promise<string[]> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from("creator_items")
+    .select("brand")
+    .eq("creator_id", user.id)
+    .not("brand", "is", null)
+    .neq("brand", "");
+
+  if (error) {
+    console.warn("[closet] fetchCreatorBrands error:", error.message);
+    return [];
+  }
+
+  const set = new Set<string>();
+  for (const row of (data ?? []) as Array<{ brand: string | null }>) {
+    const b = row.brand?.trim();
+    if (b) set.add(b);
+  }
+  return Array.from(set).sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" }),
+  );
 }
 
 export async function fetchClosetCounts(): Promise<{

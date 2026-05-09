@@ -16,6 +16,17 @@ export type Category =
   | "Outerwear"
   | "Other";
 
+/**
+ * Async-fetch lifecycle for a closet item. The Add Item flow inserts rows with
+ * fetch_status='pending', a Postgres trigger fires the scrape-product Edge
+ * Function, and the EF flips it to 'complete'/'partial'/'failed' on its own.
+ *   pending  → scrape in flight; UI shows "Fetching…" placeholder card.
+ *   complete → all metadata populated.
+ *   partial  → some fields populated, others failed (e.g. name+price, no image).
+ *   failed   → scrape errored; fetchError carries a human-readable reason.
+ */
+export type FetchStatus = "pending" | "complete" | "partial" | "failed";
+
 export interface ClosetItem {
   id: string;
   name: string | null;
@@ -28,6 +39,8 @@ export interface ClosetItem {
   archived: boolean;
   defaultWornSize: string | null;
   createdAt: string;
+  fetchStatus: FetchStatus;
+  fetchError: string | null;
 }
 
 /** Raw Supabase row shape (snake_case). Internal — don't export from app code. */
@@ -45,6 +58,8 @@ export interface ClosetItemRow {
   archived: boolean;
   default_worn_size: string | null;
   created_at: string;
+  fetch_status: FetchStatus | null;
+  fetch_error: string | null;
 }
 
 export function rowToClosetItem(row: ClosetItemRow): ClosetItem {
@@ -61,6 +76,10 @@ export function rowToClosetItem(row: ClosetItemRow): ClosetItem {
     archived: row.archived,
     defaultWornSize: row.default_worn_size,
     createdAt: row.created_at,
+    // Pre-async-pipeline rows have fetch_status NULL; treat those as complete
+    // so legacy items don't suddenly render as "Fetching…" placeholders.
+    fetchStatus: (row.fetch_status ?? "complete") as FetchStatus,
+    fetchError: row.fetch_error,
   };
 }
 
