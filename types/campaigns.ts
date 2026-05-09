@@ -25,6 +25,9 @@ export interface Campaign {
   budgetTotalUsd: number | null;
   budgetRemainingUsd: number | null;
   campaignUrl: string | null;
+  /** Amazon Sponsored Products keyword. Appended as &kw=<value> to the
+   *  affiliate redirect URL by /api/shop. NULL for affiliate_plus campaigns. */
+  kw: string | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -45,6 +48,7 @@ export interface CampaignRow {
   budget_total_usd: string | number | null;
   budget_remaining_usd: string | number | null;
   campaign_url: string | null;
+  kw: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -72,6 +76,7 @@ export function rowToCampaign(row: CampaignRow): Campaign {
         ? null
         : Number.parseFloat(String(row.budget_remaining_usd)),
     campaignUrl: row.campaign_url,
+    kw: row.kw,
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

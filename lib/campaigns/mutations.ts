@@ -18,6 +18,9 @@ export interface CampaignDraft {
   budgetTotalUsd?: number | null;
   budgetRemainingUsd?: number | null;
   campaignUrl?: string | null;
+  /** Amazon Sponsored Products keyword. Becomes &kw=<value> on the redirect
+   *  URL at click-through. Only set for sponsored_products campaigns. */
+  kw?: string | null;
 }
 
 export interface CampaignWriteResult {
@@ -75,6 +78,12 @@ export async function createCampaignAction(
     budget_total_usd: draft.budgetTotalUsd ?? null,
     budget_remaining_usd: draft.budgetRemainingUsd ?? null,
     campaign_url: draft.campaignUrl?.trim() || null,
+    // kw is only meaningful for sponsored_products. Defensive: drop on
+    // affiliate_plus so a stale value from the form can't leak through.
+    kw:
+      draft.campaignType === "sponsored_products"
+        ? draft.kw?.trim() || null
+        : null,
     created_by: auth.userId ?? null,
   };
 
@@ -118,6 +127,10 @@ export async function updateCampaignAction(
       budget_total_usd: draft.budgetTotalUsd ?? null,
       budget_remaining_usd: draft.budgetRemainingUsd ?? null,
       campaign_url: draft.campaignUrl?.trim() || null,
+      kw:
+        draft.campaignType === "sponsored_products"
+          ? draft.kw?.trim() || null
+          : null,
     })
     .eq("id", id);
 

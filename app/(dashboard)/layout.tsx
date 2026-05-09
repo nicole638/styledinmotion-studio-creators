@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { isAdmin } from "@/lib/admin/auth";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 
@@ -26,9 +27,15 @@ export default async function DashboardLayout({
   const firstName =
     (user.user_metadata?.first_name as string | undefined) ?? null;
 
+  // Admin status drives the "Admin" sidebar section visibility. Email
+  // allowlist via lib/admin/auth.ts — currently Nicole + a couple of test
+  // accounts. Same gate as the /admin/* server pages, so this is safe to
+  // expose in the nav for matching users.
+  const showAdminNav = await isAdmin();
+
   return (
     <div className="min-h-screen flex">
-      <Sidebar />
+      <Sidebar showAdminNav={showAdminNav} />
       <div className="flex-1 flex flex-col">
         <Header firstName={firstName} email={user.email ?? ""} />
         <main className="flex-1 p-6 md:p-10">{children}</main>

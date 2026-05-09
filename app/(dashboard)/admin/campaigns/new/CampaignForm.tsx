@@ -50,6 +50,7 @@ export function CampaignForm({ mode, initial }: Props) {
     initial?.budgetRemainingUsd?.toString() ?? "",
   );
   const [campaignUrl, setCampaignUrl] = useState(initial?.campaignUrl ?? "");
+  const [kw, setKw] = useState(initial?.kw ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -77,6 +78,7 @@ export function CampaignForm({ mode, initial }: Props) {
         ? Number.parseFloat(budgetRemainingUsd)
         : null,
       campaignUrl: campaignUrl || null,
+      kw: kw || null,
     };
 
     startBusy(async () => {
@@ -240,6 +242,24 @@ export function CampaignForm({ mode, initial }: Props) {
           className="w-full rounded-2xl border border-border bg-card px-4 py-2.5 text-sm outline-none focus:border-rose"
         />
       </FieldRow>
+
+      {/* kw is Amazon's Sponsored Products keyword identifier — only meaningful
+          for sponsored_products campaigns. Hidden for affiliate_plus to avoid
+          admin confusion. The value gets dropped server-side anyway when the
+          type isn't sponsored_products, so even pre-filled values are safe. */}
+      {campaignType === "sponsored_products" ? (
+        <FieldRow
+          label="Sponsored Products keyword (kw)"
+          hint="The keyword Amazon assigned to this Sponsored Products campaign. Appended as &kw=<value> on click-through redirects so Amazon can attribute paid clicks."
+        >
+          <input
+            value={kw}
+            onChange={(e) => setKw(e.target.value)}
+            placeholder="e.g. summer-skincare-2026"
+            className="w-full rounded-2xl border border-border bg-card px-4 py-2.5 text-sm outline-none focus:border-rose"
+          />
+        </FieldRow>
+      ) : null}
 
       <FieldRow
         label="Notes"
