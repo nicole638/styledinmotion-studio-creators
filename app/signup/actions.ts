@@ -71,7 +71,11 @@ export async function signupAction(
         name: `${firstName} ${lastName}`.trim(),
         user_type: "creator",
       },
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://studio.styledinmotion.studio"}/auth/confirm`,
+      // Route through /auth/callback so the PKCE code is exchanged
+      // server-side (HttpOnly cookies). After exchange, /auth/callback
+      // redirects to /, which the middleware handles for logged-in
+      // users.
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://styledinmotion-studio-creators.vercel.app"}/auth/callback?next=${encodeURIComponent("/")}`,
     },
   });
 

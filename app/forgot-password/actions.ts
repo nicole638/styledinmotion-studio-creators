@@ -15,12 +15,19 @@ export async function forgotPasswordAction(
   if (!email) return { error: "Enter your email.", notice: null };
 
   const supabase = createClient();
-  // The redirect MUST be on the allowed-redirect-URLs list in Supabase
-  // (Auth → URL Configuration). Web users land at /auth/reset here.
-  // iOS users come through styledinmotion://auth/reset (configured
-  // independently in the mobile build).
+  // The PKCE flow (default for @supabase/ssr) stores the code verifier
+  // as an HttpOnly cookie. Browser JS can't read those, so we route the
+  // email link through /auth/callback (server route handler) which
+  // exchanges the code, sets the session, then redirects to /auth/reset
+  // where the user picks a new password.
+  //
+  // Both /auth/callback and /auth/reset must be on the allowed-redirect-
+  // URLs list in Supabase (Auth → URL Configuration).
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    "https://styledinmotion-studio-creators.vercel.app";
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://studio.styledinmotion.studio"}/auth/reset`,
+    redirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent("/auth/reset")}`,
   });
 
   if (error) {

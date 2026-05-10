@@ -15,6 +15,16 @@ type SessionState =
 
 const MIN_PASSWORD = 8;
 
+/**
+ * Password-reset form. Assumes the user has already passed through
+ * /auth/callback?next=/auth/reset, which exchanged the PKCE code for
+ * a session server-side. By the time we render here, supabase.auth
+ * .getUser() should return a real user — that's the recovery session.
+ *
+ * If there's no user (someone navigated here directly, the link
+ * expired, or the cookies got cleared between hops), we show an error
+ * with a path to request a new link.
+ */
 export default function ResetForm() {
   const router = useRouter();
   const [session, setSession] = useState<SessionState>({ kind: "loading" });
@@ -23,73 +33,28 @@ export default function ResetForm() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, startSubmit] = useTransition();
 
-  // ── Exchange the recovery token for a session on mount ──────────────
-  // Two possible token shapes:
-  //   PKCE (default for @supabase/ssr): ?code=XXX in the query string
-  //   Implicit:                          #access_token=XXX&type=recovery
-  // We check both so the page works regardless of how the project is
-  // configured. Supabase will reject a malformed or expired token, in
-  // which case we kick the user back to /forgot-password.
+  // Check that the recovery session is active. The exchange happened
+  // server-side at /auth/callback before we got here.
   useEffect(() => {
-    const supabase = createClient();
     let cancelled = false;
-
-    async function exchange() {
-      const url = new URL(window.location.href);
-      const code = url.searchParams.get("code");
-
-      // Implicit flow: tokens in URL hash. Hash is everything after `#`.
-      const hash = window.location.hash.startsWith("#")
-        ? window.location.hash.slice(1)
-        : "";
-      const hashParams = new URLSearchParams(hash);
-      const accessToken = hashParams.get("access_token");
-      const refreshToken = hashParams.get("refresh_token");
-      const hashType = hashParams.get("type");
-
-      try {
-        if (code) {
-          const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
-          if (exErr) throw exErr;
-        } else if (accessToken && refreshToken && hashType === "recovery") {
-          const { error: setErr } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-          if (setErr) throw setErr;
-        } else {
-          // Maybe the user is already signed in via a previous link tap
-          // and is just hitting /auth/reset directly — allow that.
-          const { data, error: getErr } = await supabase.auth.getUser();
-          if (getErr || !data.user) {
-            throw new Error(
-              "This reset link is missing a recovery token. Request a new one.",
-            );
-          }
-        }
-
-        // Strip the token from the URL so a back-button or refresh
-        // doesn't try to re-exchange a now-consumed code.
-        if (code || hash) {
-          window.history.replaceState({}, "", "/auth/reset");
-        }
-
-        if (!cancelled) setSession({ kind: "ready" });
-      } catch (e) {
-        if (cancelled) return;
-        const msg =
-          e instanceof Error ? e.message : "Couldn't validate your reset link.";
-        setSession({ kind: "invalid", reason: msg });
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data, error: getErr }) => {
+      if (cancelled) return;
+      if (getErr || !data.user) {
+        setSession({
+          kind: "invalid",
+          reason:
+            "This reset link has expired or already been used. Request a new one.",
+        });
+        return;
       }
-    }
-
-    void exchange();
+      setSession({ kind: "ready" });
+    });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // ── Submit handler ────────────────────────────────────────────────────
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -112,16 +77,13 @@ export default function ResetForm() {
         setError(updateErr.message);
         return;
       }
-      // Sign the recovery session out so the user has to log in fresh
-      // with the new password. This avoids landing them straight in
-      // the dashboard from a recovery context (which Supabase treats
-      // as a temporary session).
+      // Sign out the recovery session so the user has to log in fresh
+      // with the new password.
       await supabase.auth.signOut();
       router.replace("/login?reset=ok");
     });
   };
 
-  // ── Render ────────────────────────────────────────────────────────────
   if (session.kind === "loading") {
     return (
       <p className="text-sm text-muted text-center">Validating your link…</p>

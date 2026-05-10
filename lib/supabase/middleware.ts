@@ -13,6 +13,9 @@ const PUBLIC_PATHS = [
   "/forgot-password",
   "/auth/confirm",
   "/auth/callback",
+  // /auth/reset is public so unauthenticated users can land here from
+  // the recovery email. The page itself checks for a recovery session
+  // and shows an error if one isn't present.
   "/auth/reset",
 ];
 
