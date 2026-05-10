@@ -200,10 +200,13 @@ function ProductRow({
   campaign: Campaign;
 }) {
   const enriched = product?.fetchStatus === "complete" && product.title;
-  // Use the campaign-attributed URL when available (admin pasted it in).
-  // The bare /dp/<asin> URL is the legacy fallback and won't pay commission
-  // on Affiliate+ / Creator Connections campaigns.
-  const href = `/closet/new?prefill=${encodeURIComponent(urlForCampaignAsin(campaign, asin))}`;
+  // ?campaignAsin=<asin> tells /closet/new to:
+  //   1. Look up the campaign + per-ASIN share URL server-side
+  //   2. Read the cached Microlink title + image
+  //   3. Land the creator directly on the editable review form with
+  //      everything pre-filled — no scrape, no Fetch button, no waiting.
+  // The bare ?prefill=<url> path is still supported for non-campaign Adds.
+  const href = `/closet/new?campaignAsin=${asin}`;
   return (
     <Link
       href={href}

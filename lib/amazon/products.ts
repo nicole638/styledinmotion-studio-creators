@@ -126,6 +126,57 @@ export async function fetchAmazonProductsForAsins(
 }
 
 /**
+ * Blocking variant for the one-ASIN-at-a-time path (e.g. campaign tile tap).
+ * Returns the cached product if present and fresh, otherwise invokes the
+ * enrichment EF synchronously and returns whatever lands within the timeout.
+ *
+ * Server components can call this when the user lands on a page that needs
+ * the product data NOW (Add Item from a campaign tile). The dashboard
+ * widget still uses the fire-and-forget batched variant above.
+ *
+ * The blocking call is capped so the user never waits more than `timeoutMs`
+ * for the page to render — if enrichment is slow we fall through to
+ * undefined and the caller renders the bare URL form.
+ */
+export async function fetchAmazonProductBlocking(
+  asin: string,
+  timeoutMs = 8000,
+): Promise<AmazonProduct | null> {
+  const upper = asin.toUpperCase();
+  const cached = await fetchAmazonProductsForAsins([upper]);
+  const existing = cached.get(upper);
+  // Cache hit + complete + has data — return immediately. This is the
+  // dominant path because the dashboard widget pre-enriches the campaign
+  // ASINs before the creator clicks into a Featured Product.
+  if (existing?.fetchStatus === "complete" && (existing.title || existing.imageUrl)) {
+    return existing;
+  }
+
+  // Need enrichment. Invoke synchronously with a timeout.
+  const supabase = createAdminClient();
+  try {
+    const racePromise = supabase.functions.invoke("enrich-amazon-asin", {
+      body: { asins: [upper] },
+    });
+    await Promise.race([
+      racePromise,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("enrich_timeout")), timeoutMs),
+      ),
+    ]);
+  } catch (e) {
+    console.warn("[amazon] blocking enrich failed:", e);
+    // Fall through — we may still have something in cache.
+  }
+
+  // Re-read the cache after the EF (or its timeout). The EF writes the
+  // row regardless of success/failure (with status reflecting the result),
+  // so a complete row here is good data and a failed row is honest.
+  const refreshed = await fetchAmazonProductsForAsins([upper]);
+  return refreshed.get(upper) ?? null;
+}
+
+/**
  * Invoke enrich-amazon-asin without waiting. Splits >10 ASINs into batches
  * (PA-API GetItems caps at 10 per call). Best-effort; errors logged.
  */

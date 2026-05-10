@@ -38,12 +38,18 @@ const EMPTY_DRAFT: AddItemDraft = {
  */
 export function AddItemForm({
   initialUrl = "",
+  initialDraft,
 }: {
   /** Prefill the URL field — used by the Active Campaigns widget on the
    *  dashboard so a campaign ASIN one-taps into the Add flow. When set,
    *  the form opens in single-URL mode regardless of which mode the user
    *  was last in. */
   initialUrl?: string;
+  /** Fully-formed draft that lets us SKIP the URL stage entirely and
+   *  land the creator on the editable review form. Used by the campaign-
+   *  tile shortcut where we resolve the product server-side from
+   *  amazon_product_cache + the campaign's per-ASIN URL. */
+  initialDraft?: AddItemDraft;
 }) {
   const [mode, setMode] = useState<Mode>("single");
 
@@ -75,7 +81,10 @@ export function AddItemForm({
       </div>
 
       {mode === "single" ? (
-        <SingleUrlForm initialUrl={initialUrl} />
+        <SingleUrlForm
+          initialUrl={initialUrl}
+          initialDraft={initialDraft}
+        />
       ) : (
         <BulkUrlForm />
       )}
@@ -96,11 +105,23 @@ export function AddItemForm({
 
 type SingleStage = "url" | "review";
 
-function SingleUrlForm({ initialUrl = "" }: { initialUrl?: string }) {
+function SingleUrlForm({
+  initialUrl = "",
+  initialDraft,
+}: {
+  initialUrl?: string;
+  initialDraft?: AddItemDraft;
+}) {
   const router = useRouter();
-  const [stage, setStage] = useState<SingleStage>("url");
-  const [url, setUrl] = useState(initialUrl);
-  const [draft, setDraft] = useState<AddItemDraft>(EMPTY_DRAFT);
+  // Skip the URL stage entirely when the server resolved a draft for us
+  // (campaign-tile shortcut, or a cache-hit on the pasted URL's ASIN).
+  const [stage, setStage] = useState<SingleStage>(
+    initialDraft ? "review" : "url",
+  );
+  const [url, setUrl] = useState(initialDraft?.url ?? initialUrl);
+  const [draft, setDraft] = useState<AddItemDraft>(
+    initialDraft ?? EMPTY_DRAFT,
+  );
   const [error, setError] = useState<string | null>(null);
   const [scrapeNotice, setScrapeNotice] = useState<string | null>(null);
   const [swapNotice, setSwapNotice] = useState<string | null>(null);
