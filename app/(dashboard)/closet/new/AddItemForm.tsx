@@ -337,8 +337,25 @@ function ReviewForm({
   const set = (key: keyof AddItemDraft, value: string) =>
     onChange({ ...draft, [key]: value });
 
+  const hasOpenableUrl = /^https?:\/\//i.test(draft.url.trim());
+
   return (
     <form onSubmit={onSave} className="space-y-4 max-w-xl">
+      {/* Quick "Open product page" link at the top of the review form so
+          creators can pop the merchant page in a new tab to grab price,
+          category, size info, etc. without losing the form's state. */}
+      {hasOpenableUrl ? (
+        <a
+          href={draft.url.trim()}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-xs text-rose hover:underline"
+        >
+          <ExternalLink size={12} strokeWidth={2.25} />
+          Open product page in new tab
+        </a>
+      ) : null}
+
       <PhotoField
         photoUrl={draft.photoUrl}
         onChange={(url) =>
