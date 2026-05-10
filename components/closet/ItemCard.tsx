@@ -63,10 +63,8 @@ export function ItemCard({ item }: Props) {
         {isFailed ? (
           <div className="mt-1.5 flex items-start gap-1.5 text-xs text-[#B53D2A]">
             <AlertCircle size={12} strokeWidth={2} className="mt-px shrink-0" />
-            <span className="truncate">
-              {item.fetchError
-                ? "Couldn't fetch — open to retry"
-                : "Fetch failed — open to retry"}
+            <span className="truncate font-medium">
+              Tap to fill in details
             </span>
           </div>
         ) : (
@@ -82,8 +80,9 @@ export function ItemCard({ item }: Props) {
         )}
 
         {isPartial ? (
-          <div className="mt-1 text-[11px] text-muted">
-            Some details missing — open to fill in.
+          <div className="mt-1 flex items-start gap-1.5 text-[11px] text-rose">
+            <AlertCircle size={11} strokeWidth={2} className="mt-px shrink-0" />
+            <span>Tap to fill in missing details</span>
           </div>
         ) : null}
       </div>

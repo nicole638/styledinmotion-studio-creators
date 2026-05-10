@@ -162,7 +162,15 @@ export async function refetchItemAsyncAction(
   return { ok: true, itemId };
 }
 
-// ─── Synchronous (legacy) add — kept during the transition ─────────────
+// ─── Direct add (preview-then-save) ────────────────────────────────────
+//
+// Used by the single-URL Add flow when the user has either:
+//   (a) hit "Fetch details", reviewed/edited the scraped result, and saved, or
+//   (b) chosen "Add manually" and filled the fields in by hand.
+//
+// We explicitly set fetch_status='complete' so the scrape trigger doesn't
+// fire and stomp on the user's edits with a re-scrape result. Bulk paste
+// still uses the async pending pattern; that's the right shape there.
 
 /** Insert a single closet item from a fully-formed draft. */
 export async function addClosetItemAction(
@@ -185,6 +193,10 @@ export async function addClosetItemAction(
     original_photo_url: draft.originalPhotoUrl.trim() || null,
     default_worn_size: draft.defaultWornSize.trim() || null,
     archived: false,
+    // Mark complete so the trigger doesn't re-fire and the closet card
+    // skips the "Fetching…" spinner.
+    fetch_status: "complete",
+    fetch_error: null,
   };
 
   const { data, error } = await supabase

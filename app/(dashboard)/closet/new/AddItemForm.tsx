@@ -1,15 +1,39 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2, Upload, X, Sparkles } from "lucide-react";
 import {
-  quickAddItemPendingAction,
+  scrapeUrlAction,
+  addClosetItemAction,
   bulkQuickAddItemsPendingAction,
+  type AddItemDraft,
 } from "@/lib/closet/mutations";
 import { CampaignMatchBanner } from "@/components/closet/CampaignMatchBanner";
+import { createClient } from "@/lib/supabase/client";
 
 type Mode = "single" | "bulk";
 
+const EMPTY_DRAFT: AddItemDraft = {
+  name: "",
+  brand: "",
+  price: "",
+  category: "",
+  url: "",
+  defaultWornSize: "",
+  photoUrl: "",
+  originalPhotoUrl: "",
+};
+
+/**
+ * Top-level Add Item entry point. Two modes:
+ *   - Single URL → preview-then-save: paste URL, fetch details, edit
+ *     fields, save. Skips the async pending state since the user has
+ *     already reviewed the data.
+ *   - Bulk paste → async/queued: paste 1-30 URLs, each becomes a
+ *     "Fetching…" card on /closet that fills in via Realtime as the
+ *     scrape EF completes.
+ */
 export function AddItemForm({
   initialUrl = "",
 }: {
@@ -57,32 +81,99 @@ export function AddItemForm({
   );
 }
 
-// ─── Single ──────────────────────────────────────────────────────────────
+// ─── Single URL: preview-then-save ───────────────────────────────────────
+//
+// State machine:
+//   stage="url"    — initial form, user pastes a URL.
+//                    Two paths out: Fetch details → "review", or
+//                    Add manually → "review" with empty draft.
+//   stage="review" — editable form pre-filled with whatever scrape
+//                    returned (or empty if manual). User adjusts, then
+//                    Save commits via addClosetItemAction with
+//                    fetch_status=complete (skips async pending).
+
+type SingleStage = "url" | "review";
 
 function SingleUrlForm({ initialUrl = "" }: { initialUrl?: string }) {
   const router = useRouter();
+  const [stage, setStage] = useState<SingleStage>("url");
   const [url, setUrl] = useState(initialUrl);
+  const [draft, setDraft] = useState<AddItemDraft>(EMPTY_DRAFT);
   const [error, setError] = useState<string | null>(null);
-  const [isAdding, startAdd] = useTransition();
+  const [scrapeNotice, setScrapeNotice] = useState<string | null>(null);
+  const [isFetching, startFetch] = useTransition();
+  const [isSaving, startSave] = useTransition();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleFetch = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    startAdd(async () => {
-      const r = await quickAddItemPendingAction(url);
-      if (r.ok) {
-        // Push to closet — the new item appears immediately as a "Fetching…"
-        // card and populates via Realtime when the EF finishes.
-        router.push("/closet");
-        router.refresh();
+    setScrapeNotice(null);
+    startFetch(async () => {
+      const r = await scrapeUrlAction(url);
+      if (r.ok && r.data) {
+        setDraft(r.data);
+        // Mention partial pulls so creators know what's missing.
+        const missing: string[] = [];
+        if (!r.data.name) missing.push("name");
+        if (!r.data.brand) missing.push("brand");
+        if (!r.data.price) missing.push("price");
+        if (!r.data.photoUrl) missing.push("photo");
+        if (missing.length > 0) {
+          setScrapeNotice(
+            `We pulled what we could — fill in ${missing.join(", ")} below.`,
+          );
+        }
+        setStage("review");
       } else {
-        setError(r.error ?? "Couldn't add — try again.");
+        setError(r.error ?? "Couldn't fetch.");
       }
     });
   };
 
+  const handleManual = () => {
+    setError(null);
+    setScrapeNotice(null);
+    setDraft({ ...EMPTY_DRAFT, url: url.trim() });
+    setStage("review");
+  };
+
+  const handleStartOver = () => {
+    setStage("url");
+    setError(null);
+    setScrapeNotice(null);
+    setDraft(EMPTY_DRAFT);
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    startSave(async () => {
+      const r = await addClosetItemAction(draft);
+      if (r.ok) {
+        router.push("/closet");
+        router.refresh();
+      } else {
+        setError(r.error ?? "Couldn't save.");
+      }
+    });
+  };
+
+  if (stage === "review") {
+    return (
+      <ReviewForm
+        draft={draft}
+        onChange={setDraft}
+        onSave={handleSave}
+        onStartOver={handleStartOver}
+        isSaving={isSaving}
+        error={error}
+        notice={scrapeNotice}
+      />
+    );
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 max-w-xl">
+    <form onSubmit={handleFetch} className="space-y-4 max-w-xl">
       <div>
         <label className="block text-xs uppercase tracking-widest text-muted mb-1.5">
           Product URL
@@ -96,13 +187,137 @@ function SingleUrlForm({ initialUrl = "" }: { initialUrl?: string }) {
           className="w-full rounded-2xl border border-border bg-card px-4 py-3 text-sm outline-none focus:border-rose"
         />
         <p className="mt-1.5 text-xs text-muted">
-          Paste a product link. We'll pull the photo, brand, and price in the
-          background — usually under 10 seconds. You can keep adding while it
-          works.
+          Paste a product link. We'll pull the photo, brand, and price so
+          you can review before saving.
         </p>
       </div>
 
       <CampaignMatchBanner url={url} />
+
+      {error ? (
+        <div className="text-sm text-[#B53D2A] bg-[#FBE9E5] border border-[#F4C7BF] rounded-2xl px-4 py-3 space-y-2">
+          <p>{error}</p>
+          <button
+            type="button"
+            onClick={handleManual}
+            className="text-xs underline underline-offset-2 hover:no-underline"
+          >
+            Or add it manually instead →
+          </button>
+        </div>
+      ) : null}
+
+      <div className="flex gap-3 items-center flex-wrap">
+        <button
+          type="submit"
+          disabled={isFetching || !url.trim()}
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-rose text-white px-5 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
+        >
+          {isFetching ? (
+            <>
+              <Loader2 size={14} strokeWidth={2.5} className="animate-spin" />
+              Fetching…
+            </>
+          ) : (
+            <>
+              <Sparkles size={14} strokeWidth={2.25} />
+              Fetch details
+            </>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={handleManual}
+          disabled={!url.trim() || isFetching}
+          className="text-sm text-muted underline underline-offset-2 hover:text-rose disabled:opacity-50 transition-colors"
+        >
+          Or add manually
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ReviewForm({
+  draft,
+  onChange,
+  onSave,
+  onStartOver,
+  isSaving,
+  error,
+  notice,
+}: {
+  draft: AddItemDraft;
+  onChange: (d: AddItemDraft) => void;
+  onSave: (e: React.FormEvent) => void;
+  onStartOver: () => void;
+  isSaving: boolean;
+  error: string | null;
+  notice: string | null;
+}) {
+  const set = (key: keyof AddItemDraft, value: string) =>
+    onChange({ ...draft, [key]: value });
+
+  return (
+    <form onSubmit={onSave} className="space-y-4 max-w-xl">
+      <PhotoField
+        photoUrl={draft.photoUrl}
+        onChange={(url) =>
+          onChange({
+            ...draft,
+            photoUrl: url,
+            // Keep originalPhotoUrl pointing at the merchant's source so
+            // a later "Re-fetch" on Edit can restore it.
+            originalPhotoUrl: draft.originalPhotoUrl || url,
+          })
+        }
+      />
+
+      {notice ? (
+        <div className="text-xs text-muted bg-card border border-border rounded-2xl px-4 py-2.5">
+          {notice}
+        </div>
+      ) : null}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Field
+          label="Name"
+          value={draft.name}
+          onChange={(v) => set("name", v)}
+          required
+          placeholder="Linen Midi Dress"
+        />
+        <Field
+          label="Brand"
+          value={draft.brand}
+          onChange={(v) => set("brand", v)}
+          placeholder="Reformation"
+        />
+        <Field
+          label="Price"
+          value={draft.price}
+          onChange={(v) => set("price", v)}
+          placeholder="$148"
+        />
+        <Field
+          label="Category"
+          value={draft.category}
+          onChange={(v) => set("category", v)}
+          placeholder="Dress, Top, Bottom…"
+        />
+        <Field
+          label="Default size worn"
+          value={draft.defaultWornSize}
+          onChange={(v) => set("defaultWornSize", v)}
+          placeholder="M, 6, etc."
+        />
+        <Field
+          label="Product URL"
+          value={draft.url}
+          onChange={(v) => set("url", v)}
+          type="url"
+        />
+      </div>
 
       {error ? (
         <div className="text-sm text-[#B53D2A] bg-[#FBE9E5] border border-[#F4C7BF] rounded-2xl px-4 py-3">
@@ -110,18 +325,188 @@ function SingleUrlForm({ initialUrl = "" }: { initialUrl?: string }) {
         </div>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={isAdding || !url.trim()}
-        className="inline-flex items-center justify-center rounded-full bg-rose text-white px-5 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
-      >
-        {isAdding ? "Adding…" : "Add to closet"}
-      </button>
+      <div className="flex gap-3 items-center pt-2">
+        <button
+          type="submit"
+          disabled={isSaving || !draft.name.trim()}
+          className="inline-flex items-center justify-center rounded-full bg-rose text-white px-5 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
+        >
+          {isSaving ? "Saving…" : "Add to closet"}
+        </button>
+        <button
+          type="button"
+          onClick={onStartOver}
+          className="text-sm text-muted underline underline-offset-2 hover:text-rose transition-colors"
+        >
+          Start over
+        </button>
+      </div>
     </form>
   );
 }
 
-// ─── Bulk ────────────────────────────────────────────────────────────────
+function Field({
+  label,
+  value,
+  onChange,
+  type = "text",
+  placeholder,
+  required,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  placeholder?: string;
+  required?: boolean;
+}) {
+  return (
+    <div>
+      <label className="block text-xs uppercase tracking-widest text-muted mb-1.5">
+        {label}
+      </label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        required={required}
+        className="w-full rounded-2xl border border-border bg-card px-4 py-3 text-sm outline-none focus:border-rose"
+      />
+    </div>
+  );
+}
+
+/**
+ * Photo upload + preview for a not-yet-saved item. Uploads to the
+ * existing `item-photos` Supabase Storage bucket under the creator's
+ * own id (RLS allows this prefix). The merchant CDN URL stays editable
+ * via the photoUrl field but most creators will just upload or accept
+ * what the scrape returned.
+ */
+function PhotoField({
+  photoUrl,
+  onChange,
+}: {
+  photoUrl: string;
+  onChange: (url: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handlePick = () => inputRef.current?.click();
+
+  const handleFile = async (file: File) => {
+    setError(null);
+    if (file.size > 10 * 1024 * 1024) {
+      setError("Image must be under 10 MB.");
+      return;
+    }
+    setUploading(true);
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in.");
+      const ext = file.type.includes("png")
+        ? "png"
+        : file.type.includes("webp")
+          ? "webp"
+          : "jpg";
+      const random = Math.random().toString(36).slice(2, 10);
+      const path = `${user.id}/new-${Date.now()}-${random}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("item-photos")
+        .upload(path, file, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: file.type,
+        });
+      if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+      const { data } = supabase.storage.from("item-photos").getPublicUrl(path);
+      onChange(data.publicUrl);
+    } catch (e: any) {
+      setError(e?.message ?? "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleClear = () => {
+    onChange("");
+    if (inputRef.current) inputRef.current.value = "";
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4 flex gap-4 items-start">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) handleFile(f);
+        }}
+      />
+      {photoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={photoUrl}
+          alt="Product"
+          className="w-24 h-32 object-cover rounded-xl bg-bg shrink-0 border border-border"
+        />
+      ) : (
+        <div className="w-24 h-32 rounded-xl border border-dashed border-border bg-bg grid place-items-center shrink-0">
+          <span className="text-[10px] uppercase tracking-widest text-muted">
+            No photo
+          </span>
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs uppercase tracking-widest text-muted mb-2">
+          Product photo
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handlePick}
+            disabled={uploading}
+            className="inline-flex items-center gap-1.5 rounded-full bg-card border border-border px-3 py-1.5 text-xs hover:border-rose disabled:opacity-60 transition-colors"
+          >
+            <Upload size={12} strokeWidth={2.25} />
+            {uploading
+              ? "Uploading…"
+              : photoUrl
+                ? "Replace photo"
+                : "Upload photo"}
+          </button>
+          {photoUrl ? (
+            <button
+              type="button"
+              onClick={handleClear}
+              disabled={uploading}
+              className="inline-flex items-center gap-1.5 rounded-full bg-card border border-border px-3 py-1.5 text-xs hover:border-rose disabled:opacity-60 transition-colors"
+            >
+              <X size={12} strokeWidth={2.25} />
+              Remove
+            </button>
+          ) : null}
+        </div>
+        <p className="mt-2 text-[11px] text-muted">
+          JPG, PNG, or WebP. Up to 10 MB.
+        </p>
+        {error ? (
+          <p className="mt-2 text-xs text-[#B53D2A]">{error}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ─── Bulk paste — async/queued, unchanged ────────────────────────────────
 
 function BulkUrlForm() {
   const router = useRouter();
@@ -165,13 +550,15 @@ function BulkUrlForm() {
           rows={10}
           value={pasted}
           onChange={(e) => setPasted(e.target.value)}
-          placeholder={"https://amazon.com/...\nhttps://reformation.com/...\nhttps://aloyoga.com/..."}
+          placeholder={
+            "https://amazon.com/...\nhttps://reformation.com/...\nhttps://aloyoga.com/..."
+          }
           className="w-full rounded-2xl border border-border bg-card px-4 py-3 text-sm font-mono outline-none focus:border-rose"
         />
         <p className="mt-1.5 text-xs text-muted">
-          Up to 30 URLs at a time. Each one is fetched in parallel and shows
-          up as a "Fetching…" card in your closet — you don't have to wait
-          here.
+          Up to 30 URLs at a time. Each one is fetched in parallel and
+          shows up as a "Fetching…" card in your closet — open any card
+          to fill in missing details.
         </p>
       </div>
 
