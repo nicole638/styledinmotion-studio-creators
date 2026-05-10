@@ -1,10 +1,15 @@
 import Link from "next/link";
-import { Sparkles, Clock, ArrowUpRight } from "lucide-react";
+import { Sparkles, Clock, Plus } from "lucide-react";
 import { listActiveCampaignsForCreator } from "@/lib/campaigns/queries";
 import {
   CAMPAIGN_TYPE_LABEL,
   type Campaign,
 } from "@/types/campaigns";
+
+/** Max ASINs shown inline before we collapse behind a "View all" link. */
+const ASINS_PREVIEW = 6;
+/** Build the canonical Amazon product URL for an ASIN. */
+const amazonUrlForAsin = (asin: string) => `https://www.amazon.com/dp/${asin}`;
 
 /**
  * Active brand campaigns surfaced on the creator dashboard. Highest
@@ -45,11 +50,15 @@ export async function ActiveCampaignsWidget() {
 function CampaignCard({ campaign }: { campaign: Campaign }) {
   const daysLeft = daysUntil(campaign.endDate);
   const urgent = daysLeft !== null && daysLeft <= 7;
+  // Truncated preview list — large campaigns can have 50+ ASINs and a wall of
+  // them buries the rest of the dashboard. Show the first 6 inline; the rest
+  // collapse behind a "View all N" link.
+  const asinsPreview = campaign.asins.slice(0, ASINS_PREVIEW);
+  const remaining = campaign.asins.length - asinsPreview.length;
 
   return (
-    <div className="group block rounded-2xl border border-border bg-card p-4 hover:border-rose transition-colors">
+    <div className="block rounded-2xl border border-border bg-card p-4 hover:border-rose transition-colors">
       <div className="flex items-start gap-3">
-        {/* Brand mark */}
         <BrandMark
           name={campaign.brandName}
           logoUrl={campaign.brandLogoUrl}
@@ -96,13 +105,43 @@ function CampaignCard({ campaign }: { campaign: Campaign }) {
             </p>
           ) : null}
         </div>
-
-        <ArrowUpRight
-          size={14}
-          strokeWidth={2}
-          className="text-muted group-hover:text-rose transition-colors shrink-0"
-        />
       </div>
+
+      {/* Featured products — direct path from "see campaign" to "tag the
+          item." Each row prefills the Add Item URL field so the creator
+          doesn't have to copy/paste anything; scrape kicks in automatically. */}
+      {campaign.asins.length > 0 ? (
+        <div className="mt-3 pt-3 border-t border-border">
+          <p className="text-[10px] uppercase tracking-widest text-muted mb-2">
+            Featured products
+          </p>
+          <ul className="space-y-1">
+            {asinsPreview.map((asin) => (
+              <li key={asin}>
+                <Link
+                  href={`/closet/new?prefill=${encodeURIComponent(amazonUrlForAsin(asin))}`}
+                  className="group flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-bg transition-colors"
+                  title={`Add ${asin} to your closet`}
+                >
+                  <span className="font-mono text-[11px] text-muted truncate">
+                    {asin}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-xs text-rose font-medium shrink-0">
+                    <Plus size={11} strokeWidth={2.5} />
+                    Add to closet
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {remaining > 0 ? (
+            <p className="mt-2 text-[11px] text-muted">
+              + {remaining} more product{remaining === 1 ? "" : "s"} in this
+              campaign — see the brand brief for the full list.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {campaign.campaignUrl ? (
         <div className="mt-3 pt-3 border-t border-border">

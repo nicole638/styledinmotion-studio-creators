@@ -4,7 +4,14 @@ import { AddItemForm } from "./AddItemForm";
 
 export const metadata = { title: "Add piece" };
 
-export default function NewClosetItemPage() {
+export default function NewClosetItemPage({
+  searchParams,
+}: {
+  // ?prefill=<encoded-url> seeds the URL input. Used by the Active Campaigns
+  // widget so creators can one-tap a campaign ASIN into the Add flow.
+  searchParams: { prefill?: string };
+}) {
+  const prefill = searchParams.prefill?.trim() ?? "";
   return (
     <div className="max-w-3xl">
       <Link
@@ -27,7 +34,7 @@ export default function NewClosetItemPage() {
       <div className="mt-10 editorial-divider" />
 
       <div className="mt-8">
-        <AddItemForm />
+        <AddItemForm initialUrl={prefill} />
       </div>
     </div>
   );

@@ -10,7 +10,15 @@ import { CampaignMatchBanner } from "@/components/closet/CampaignMatchBanner";
 
 type Mode = "single" | "bulk";
 
-export function AddItemForm() {
+export function AddItemForm({
+  initialUrl = "",
+}: {
+  /** Prefill the URL field — used by the Active Campaigns widget on the
+   *  dashboard so a campaign ASIN one-taps into the Add flow. When set,
+   *  the form opens in single-URL mode regardless of which mode the user
+   *  was last in. */
+  initialUrl?: string;
+}) {
   const [mode, setMode] = useState<Mode>("single");
 
   return (
@@ -40,16 +48,20 @@ export function AddItemForm() {
         </button>
       </div>
 
-      {mode === "single" ? <SingleUrlForm /> : <BulkUrlForm />}
+      {mode === "single" ? (
+        <SingleUrlForm initialUrl={initialUrl} />
+      ) : (
+        <BulkUrlForm />
+      )}
     </div>
   );
 }
 
 // ─── Single ──────────────────────────────────────────────────────────────
 
-function SingleUrlForm() {
+function SingleUrlForm({ initialUrl = "" }: { initialUrl?: string }) {
   const router = useRouter();
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(initialUrl);
   const [error, setError] = useState<string | null>(null);
   const [isAdding, startAdd] = useTransition();
 
