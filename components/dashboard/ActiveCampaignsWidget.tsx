@@ -2,6 +2,10 @@ import Link from "next/link";
 import { Sparkles, Clock, Plus } from "lucide-react";
 import { listActiveCampaignsForCreator } from "@/lib/campaigns/queries";
 import {
+  fetchAmazonProductsForAsins,
+  type AmazonProduct,
+} from "@/lib/amazon/products";
+import {
   CAMPAIGN_TYPE_LABEL,
   type Campaign,
 } from "@/types/campaigns";
@@ -20,6 +24,14 @@ const amazonUrlForAsin = (asin: string) => `https://www.amazon.com/dp/${asin}`;
 export async function ActiveCampaignsWidget() {
   const campaigns = await listActiveCampaignsForCreator(5);
   if (campaigns.length === 0) return null;
+
+  // One enrichment pass for ALL ASINs across all visible campaigns. The
+  // helper dedupes and fires PA-API for misses in the background — we
+  // render with whatever's already cached on this pass.
+  const allAsins = Array.from(
+    new Set(campaigns.flatMap((c) => c.asins.slice(0, ASINS_PREVIEW))),
+  );
+  const products = await fetchAmazonProductsForAsins(allAsins);
 
   return (
     <section className="mt-12">
@@ -40,14 +52,20 @@ export async function ActiveCampaignsWidget() {
 
       <div className="grid gap-3 md:grid-cols-2">
         {campaigns.map((c) => (
-          <CampaignCard key={c.id} campaign={c} />
+          <CampaignCard key={c.id} campaign={c} products={products} />
         ))}
       </div>
     </section>
   );
 }
 
-function CampaignCard({ campaign }: { campaign: Campaign }) {
+function CampaignCard({
+  campaign,
+  products,
+}: {
+  campaign: Campaign;
+  products: Map<string, AmazonProduct>;
+}) {
   const daysLeft = daysUntil(campaign.endDate);
   const urgent = daysLeft !== null && daysLeft <= 7;
   // Truncated preview list — large campaigns can have 50+ ASINs and a wall of
@@ -109,28 +127,18 @@ function CampaignCard({ campaign }: { campaign: Campaign }) {
 
       {/* Featured products — direct path from "see campaign" to "tag the
           item." Each row prefills the Add Item URL field so the creator
-          doesn't have to copy/paste anything; scrape kicks in automatically. */}
+          doesn't have to copy/paste anything; scrape kicks in automatically.
+          Enriched via PA-API: shows real title + thumbnail when cached,
+          falls back to ASIN code while enrichment is pending. */}
       {campaign.asins.length > 0 ? (
         <div className="mt-3 pt-3 border-t border-border">
           <p className="text-[10px] uppercase tracking-widest text-muted mb-2">
             Featured products
           </p>
-          <ul className="space-y-1">
+          <ul className="space-y-1.5">
             {asinsPreview.map((asin) => (
               <li key={asin}>
-                <Link
-                  href={`/closet/new?prefill=${encodeURIComponent(amazonUrlForAsin(asin))}`}
-                  className="group flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-bg transition-colors"
-                  title={`Add ${asin} to your closet`}
-                >
-                  <span className="font-mono text-[11px] text-muted truncate">
-                    {asin}
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-xs text-rose font-medium shrink-0">
-                    <Plus size={11} strokeWidth={2.5} />
-                    Add to closet
-                  </span>
-                </Link>
+                <ProductRow asin={asin} product={products.get(asin)} />
               </li>
             ))}
           </ul>
@@ -156,6 +164,66 @@ function CampaignCard({ campaign }: { campaign: Campaign }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Single product row inside a campaign card. Three render states:
+ *
+ *   1. Enriched (`product.title + product.imageUrl`) — show thumbnail + title.
+ *   2. Pending (no row in cache, or fetch_status='pending') — show ASIN code
+ *      with a small "loading" treatment. PA-API takes a few seconds; the
+ *      next render will show the enriched data.
+ *   3. Failed or no-data — show ASIN code (same as pending visually). Don't
+ *      surface the error to creators; they can still click through to add it.
+ *
+ * Tap target navigates to /closet/new with the URL pre-populated, regardless
+ * of enrichment state.
+ */
+function ProductRow({
+  asin,
+  product,
+}: {
+  asin: string;
+  product: AmazonProduct | undefined;
+}) {
+  const enriched = product?.fetchStatus === "complete" && product.title;
+  const href = `/closet/new?prefill=${encodeURIComponent(amazonUrlForAsin(asin))}`;
+  return (
+    <Link
+      href={href}
+      className="group flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-bg transition-colors"
+      title={`Add ${product?.title ?? asin} to your closet`}
+    >
+      {/* Thumbnail or ASIN-code fallback. Amazon images are fetched from m.media-amazon.com.
+          We use unoptimized so Next doesn't proxy through its image optimizer
+          (Amazon CDN is already fast and we don't want to consume Vercel image bandwidth). */}
+      {enriched && product?.imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={product.imageUrl}
+          alt={product.title ?? ""}
+          className="w-12 h-12 rounded-md bg-bg object-contain p-0.5 shrink-0 border border-border"
+        />
+      ) : (
+        <div className="w-12 h-12 rounded-md bg-bg border border-border grid place-items-center shrink-0">
+          <span className="font-mono text-[9px] text-muted">{asin.slice(-4)}</span>
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        {enriched ? (
+          <p className="text-xs text-text leading-tight line-clamp-2">
+            {product!.title}
+          </p>
+        ) : (
+          <p className="font-mono text-[11px] text-muted truncate">{asin}</p>
+        )}
+      </div>
+      <span className="inline-flex items-center gap-1 text-xs text-rose font-medium shrink-0 opacity-70 group-hover:opacity-100 transition-opacity">
+        <Plus size={11} strokeWidth={2.5} />
+        Add
+      </span>
+    </Link>
   );
 }
 
