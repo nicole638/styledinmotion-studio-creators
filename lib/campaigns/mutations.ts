@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/admin/auth";
+import { extractAsin } from "@/lib/closet/asin";
 import type { CampaignType, CampaignSource } from "@/types/campaigns";
 
 export interface CampaignDraft {
@@ -30,27 +31,71 @@ export interface CampaignWriteResult {
 }
 
 /**
- * Permissive ASIN parser. Accepts pasted lists separated by commas, newlines,
- * spaces, or semicolons. Strips whitespace, dedupes, uppercases. Validates
- * each looks like an Amazon ASIN (B-prefix, 10 chars alphanumeric — Amazon's
- * standard format).
+ * Permissive parser that accepts EITHER:
+ *   - Bare ASINs (e.g. "B09YCYYHB6") separated by commas/spaces/newlines, OR
+ *   - Full Amazon Creator Connections share URLs (one per line) like
+ *     https://www.amazon.com/dp/B0F2H81T8V?campaignId=…&linkId=…&tag=…
+ *
+ * For URL inputs, extracts the ASIN and stores the full URL in asinLinks
+ * so /api/shop can serve the campaign-attributed URL on click. The bare-
+ * ASIN path is kept for legacy admin entry but yields no attribution
+ * (rejected loudly in the form copy).
  */
-function parseAsins(raw: string): { asins: string[]; rejected: string[] } {
+function parseAsinsAndLinks(raw: string): {
+  asins: string[];
+  asinLinks: Record<string, string>;
+  rejected: string[];
+  /** Bare ASINs entered without a URL — they'll work for surfacing the
+   *  campaign banner but won't actually pay out commission until a real
+   *  campaign URL is added. The form copy nudges admins to paste URLs. */
+  asinsWithoutLinks: string[];
+} {
+  // Split on whitespace/commas/semicolons. A URL with `?` or `&` won't
+  // get split because those characters aren't separators here.
   const tokens = raw
     .split(/[\s,;]+/)
-    .map((t) => t.trim().toUpperCase())
+    .map((t) => t.trim())
     .filter(Boolean);
-  const asinPattern = /^B[0-9A-Z]{9}$/;
+  const asinPattern = /^B[0-9A-Z]{9}$/i;
   const asins: string[] = [];
+  const asinLinks: Record<string, string> = {};
   const rejected: string[] = [];
+  const asinsWithoutLinks: string[] = [];
   const seen = new Set<string>();
-  for (const t of tokens) {
-    if (seen.has(t)) continue;
-    seen.add(t);
-    if (asinPattern.test(t)) asins.push(t);
-    else rejected.push(t);
+
+  for (const token of tokens) {
+    // Looks like a URL → extract ASIN, store full URL.
+    if (/^https?:\/\//i.test(token)) {
+      const asin = extractAsin(token);
+      if (!asin) {
+        rejected.push(token);
+        continue;
+      }
+      if (seen.has(asin)) {
+        // Duplicate ASIN — keep the URL from the FIRST occurrence (admin
+        // intent). Don't reject, just skip.
+        continue;
+      }
+      seen.add(asin);
+      asins.push(asin);
+      asinLinks[asin] = token;
+      continue;
+    }
+
+    // Looks like a bare ASIN.
+    const upper = token.toUpperCase();
+    if (asinPattern.test(upper)) {
+      if (seen.has(upper)) continue;
+      seen.add(upper);
+      asins.push(upper);
+      asinsWithoutLinks.push(upper);
+      continue;
+    }
+
+    rejected.push(token);
   }
-  return { asins, rejected };
+
+  return { asins, asinLinks, rejected, asinsWithoutLinks };
 }
 
 export async function createCampaignAction(
@@ -62,13 +107,14 @@ export async function createCampaignAction(
   const validation = validateDraft(draft);
   if (!validation.ok) return { ok: false, error: validation.error };
 
-  const { asins } = parseAsins(draft.asinsRaw);
+  const { asins, asinLinks } = parseAsinsAndLinks(draft.asinsRaw);
 
   const supabase = createAdminClient();
   const payload = {
     brand_name: draft.brandName.trim(),
     brand_logo_url: draft.brandLogoUrl?.trim() || null,
     asins,
+    asin_links: asinLinks,
     start_date: draft.startDate,
     end_date: draft.endDate,
     commission_rate_pct: draft.commissionRatePct,
@@ -109,7 +155,7 @@ export async function updateCampaignAction(
   const validation = validateDraft(draft);
   if (!validation.ok) return { ok: false, error: validation.error };
 
-  const { asins } = parseAsins(draft.asinsRaw);
+  const { asins, asinLinks } = parseAsinsAndLinks(draft.asinsRaw);
   const supabase = createAdminClient();
 
   const { error } = await supabase
@@ -118,6 +164,7 @@ export async function updateCampaignAction(
       brand_name: draft.brandName.trim(),
       brand_logo_url: draft.brandLogoUrl?.trim() || null,
       asins,
+      asin_links: asinLinks,
       start_date: draft.startDate,
       end_date: draft.endDate,
       commission_rate_pct: draft.commissionRatePct,
@@ -178,13 +225,13 @@ function validateDraft(d: CampaignDraft): { ok: true } | { ok: false; error: str
   if (!d.campaignType) return { ok: false, error: "Campaign type is required." };
   if (!d.source) return { ok: false, error: "Source is required." };
 
-  const { asins, rejected } = parseAsins(d.asinsRaw);
+  const { asins, rejected } = parseAsinsAndLinks(d.asinsRaw);
   if (asins.length === 0)
     return {
       ok: false,
       error: rejected.length
-        ? `No valid ASINs found. Rejected: ${rejected.slice(0, 3).join(", ")}${rejected.length > 3 ? "…" : ""}. ASINs look like B0XXXXXXXX (B + 9 alphanumeric).`
-        : "Paste at least one ASIN. ASINs look like B0XXXXXXXX (B + 9 alphanumeric).",
+        ? `No valid ASINs found. Rejected: ${rejected.slice(0, 3).join(", ")}${rejected.length > 3 ? "…" : ""}. Paste full Amazon Creator Connections share URLs (one per line) — we extract the ASIN and store the URL so commissions attribute correctly.`
+        : "Paste at least one Amazon Creator Connections share URL. Bare ASINs are accepted but won't pay out — Amazon needs the campaignId + linkId baked into the URL.",
     };
   return { ok: true };
 }

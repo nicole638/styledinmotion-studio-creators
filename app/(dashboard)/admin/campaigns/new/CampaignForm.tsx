@@ -29,9 +29,16 @@ export function CampaignForm({ mode, initial }: Props) {
 
   const [brandName, setBrandName] = useState(initial?.brandName ?? "");
   const [brandLogoUrl, setBrandLogoUrl] = useState(initial?.brandLogoUrl ?? "");
-  const [asinsRaw, setAsinsRaw] = useState(
-    (initial?.asins ?? []).join("\n"),
-  );
+  // Edit-mode prefill: prefer the stored campaign URL per ASIN so the
+  // admin sees the actual share URLs (with campaignId/linkId/tag) rather
+  // than just the bare codes. Falls back to bare ASIN if no URL on file.
+  const [asinsRaw, setAsinsRaw] = useState(() => {
+    if (!initial) return "";
+    const links = initial.asinLinks ?? {};
+    return (initial.asins ?? [])
+      .map((asin) => links[asin] || asin)
+      .join("\n");
+  });
   const [startDate, setStartDate] = useState(initial?.startDate ?? "");
   const [endDate, setEndDate] = useState(initial?.endDate ?? "");
   const [commissionRatePct, setCommissionRatePct] = useState<string>(
@@ -188,10 +195,10 @@ export function CampaignForm({ mode, initial }: Props) {
         />
       </FieldRow>
 
-      {/* ASINs */}
+      {/* Per-ASIN campaign URLs */}
       <FieldRow
-        label="ASINs"
-        hint="Paste from the campaign page. One per line, or separate with spaces/commas. Format: B0XXXXXXXX (B + 9 alphanumeric)."
+        label="Campaign share URLs"
+        hint="Paste the full share URL for each product from your Creator Connections dashboard (one per line). The URL has the campaignId + linkId + tag that Amazon needs to attribute commission. We extract the ASIN automatically."
         required
       >
         <textarea
@@ -199,7 +206,9 @@ export function CampaignForm({ mode, initial }: Props) {
           rows={6}
           value={asinsRaw}
           onChange={(e) => setAsinsRaw(e.target.value)}
-          placeholder={"B09YCYYHB6\nB0B864M43K\nB0D8CJYFH9"}
+          placeholder={
+            "https://www.amazon.com/dp/B0F2H81T8V?campaignId=…&linkId=…&tag=styledinmotio-20\nhttps://www.amazon.com/dp/B0CRR41F52?campaignId=…&linkId=…&tag=styledinmotio-20"
+          }
           className="w-full rounded-2xl border border-border bg-card px-4 py-2.5 text-sm font-mono outline-none focus:border-rose"
         />
       </FieldRow>

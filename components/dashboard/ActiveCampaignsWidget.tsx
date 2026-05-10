@@ -12,8 +12,14 @@ import {
 
 /** Max ASINs shown inline before we collapse behind a "View all" link. */
 const ASINS_PREVIEW = 6;
-/** Build the canonical Amazon product URL for an ASIN. */
-const amazonUrlForAsin = (asin: string) => `https://www.amazon.com/dp/${asin}`;
+/**
+ * Resolve the share URL for an ASIN inside a campaign. Prefers the
+ * campaign-specific URL (campaignId + linkId + tag baked in — required
+ * for Amazon Creator Connections attribution) and falls back to the bare
+ * canonical URL when the admin hasn't pasted per-ASIN URLs yet.
+ */
+const urlForCampaignAsin = (campaign: Campaign, asin: string): string =>
+  campaign.asinLinks?.[asin] ?? `https://www.amazon.com/dp/${asin}`;
 
 /**
  * Active brand campaigns surfaced on the creator dashboard. Highest
@@ -138,7 +144,11 @@ function CampaignCard({
           <ul className="space-y-1.5">
             {asinsPreview.map((asin) => (
               <li key={asin}>
-                <ProductRow asin={asin} product={products.get(asin)} />
+                <ProductRow
+                  asin={asin}
+                  product={products.get(asin)}
+                  campaign={campaign}
+                />
               </li>
             ))}
           </ul>
@@ -183,12 +193,17 @@ function CampaignCard({
 function ProductRow({
   asin,
   product,
+  campaign,
 }: {
   asin: string;
   product: AmazonProduct | undefined;
+  campaign: Campaign;
 }) {
   const enriched = product?.fetchStatus === "complete" && product.title;
-  const href = `/closet/new?prefill=${encodeURIComponent(amazonUrlForAsin(asin))}`;
+  // Use the campaign-attributed URL when available (admin pasted it in).
+  // The bare /dp/<asin> URL is the legacy fallback and won't pay commission
+  // on Affiliate+ / Creator Connections campaigns.
+  const href = `/closet/new?prefill=${encodeURIComponent(urlForCampaignAsin(campaign, asin))}`;
   return (
     <Link
       href={href}

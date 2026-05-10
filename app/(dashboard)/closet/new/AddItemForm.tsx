@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useCallback, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Upload, X, Sparkles, ExternalLink } from "lucide-react";
 import {
@@ -11,6 +11,8 @@ import {
 } from "@/lib/closet/mutations";
 import { CampaignMatchBanner } from "@/components/closet/CampaignMatchBanner";
 import { createClient } from "@/lib/supabase/client";
+import { extractAsin } from "@/lib/closet/asin";
+import type { Campaign } from "@/types/campaigns";
 
 type Mode = "single" | "bulk";
 
@@ -101,8 +103,35 @@ function SingleUrlForm({ initialUrl = "" }: { initialUrl?: string }) {
   const [draft, setDraft] = useState<AddItemDraft>(EMPTY_DRAFT);
   const [error, setError] = useState<string | null>(null);
   const [scrapeNotice, setScrapeNotice] = useState<string | null>(null);
+  const [swapNotice, setSwapNotice] = useState<string | null>(null);
   const [isFetching, startFetch] = useTransition();
   const [isSaving, startSave] = useTransition();
+
+  // When a pasted URL matches an active campaign AND we have the
+  // campaign-specific share URL on file (campaignId + linkId + tag baked
+  // in), auto-swap to it. The bare /dp/<asin> URL won't pay out — Amazon
+  // Creator Connections needs the campaign-tagged URL verbatim.
+  const handleCampaignMatch = useCallback(
+    (campaign: Campaign) => {
+      const asin = extractAsin(url);
+      if (!asin) return;
+      const campaignUrl = campaign.asinLinks?.[asin];
+      if (!campaignUrl) return;
+      if (campaignUrl === url.trim()) return; // already on it
+      setUrl(campaignUrl);
+      setSwapNotice(
+        `Swapped to the ${campaign.brandName} campaign URL so commissions attribute.`,
+      );
+    },
+    [url],
+  );
+
+  // Some URL params are critical for affiliate attribution and MUST be
+  // preserved through the scrape step. The scraper's canonical_url strips
+  // everything; we override with the user's pasted URL when these signals
+  // are present.
+  const hasAttributionParams = (raw: string): boolean =>
+    /[?&](campaignId|linkId|ascsubtag|tag)=/i.test(raw);
 
   const handleFetch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,7 +140,9 @@ function SingleUrlForm({ initialUrl = "" }: { initialUrl?: string }) {
     startFetch(async () => {
       const r = await scrapeUrlAction(url);
       if (r.ok && r.data) {
-        setDraft(r.data);
+        const userUrl = url.trim();
+        const finalUrl = hasAttributionParams(userUrl) ? userUrl : r.data.url;
+        setDraft({ ...r.data, url: finalUrl });
         // Mention partial pulls so creators know what's missing.
         const missing: string[] = [];
         if (!r.data.name) missing.push("name");
@@ -141,6 +172,7 @@ function SingleUrlForm({ initialUrl = "" }: { initialUrl?: string }) {
     setStage("url");
     setError(null);
     setScrapeNotice(null);
+    setSwapNotice(null);
     setDraft(EMPTY_DRAFT);
   };
 
@@ -192,7 +224,16 @@ function SingleUrlForm({ initialUrl = "" }: { initialUrl?: string }) {
         </p>
       </div>
 
-      <CampaignMatchBanner url={url} />
+      <CampaignMatchBanner url={url} onMatch={handleCampaignMatch} />
+
+      {swapNotice ? (
+        <div
+          role="status"
+          className="text-xs text-text bg-card border border-border rounded-2xl px-4 py-2.5"
+        >
+          {swapNotice}
+        </div>
+      ) : null}
 
       {error ? (
         <div className="text-sm text-[#B53D2A] bg-[#FBE9E5] border border-[#F4C7BF] rounded-2xl px-4 py-3 space-y-2">

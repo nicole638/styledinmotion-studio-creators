@@ -16,6 +16,12 @@ export interface Campaign {
   brandName: string;
   brandLogoUrl: string | null;
   asins: string[];
+  /** ASIN -> full Amazon Creator Connections share URL with campaignId,
+   *  linkId, tag, and linkCode baked in. The linkId has a per-link
+   *  timestamp Amazon won't accept us reconstructing, so storing the URL
+   *  verbatim is the source of truth for attribution. Empty object means
+   *  per-ASIN URLs haven't been set (legacy rows). */
+  asinLinks: Record<string, string>;
   startDate: string; // ISO date (yyyy-mm-dd)
   endDate: string;
   commissionRatePct: number;
@@ -39,6 +45,7 @@ export interface CampaignRow {
   brand_name: string;
   brand_logo_url: string | null;
   asins: string[] | null;
+  asin_links: Record<string, string> | null;
   start_date: string;
   end_date: string;
   commission_rate_pct: string | number; // numeric arrives as string from PostgREST
@@ -61,6 +68,7 @@ export function rowToCampaign(row: CampaignRow): Campaign {
     brandName: row.brand_name,
     brandLogoUrl: row.brand_logo_url,
     asins: row.asins ?? [],
+    asinLinks: row.asin_links ?? {},
     startDate: row.start_date,
     endDate: row.end_date,
     commissionRatePct: Number.parseFloat(String(row.commission_rate_pct)),

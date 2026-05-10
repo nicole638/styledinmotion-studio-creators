@@ -11,8 +11,19 @@ import { CAMPAIGN_TYPE_LABEL } from "@/types/campaigns";
  * When the user pastes/types an Amazon URL whose ASIN is in an active
  * campaign, surface a banner above the form with the bonus commission rate.
  * Debounced so we don't hit the server on every keystroke.
+ *
+ * Optional `onMatch` callback lets the parent react to a successful match —
+ * the Add/Edit forms use it to auto-swap the URL field with the campaign-
+ * specific URL (which includes campaignId/linkId/tag) so commissions
+ * actually attribute.
  */
-export function CampaignMatchBanner({ url }: { url: string }) {
+export function CampaignMatchBanner({
+  url,
+  onMatch,
+}: {
+  url: string;
+  onMatch?: (campaign: Campaign) => void;
+}) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -36,6 +47,7 @@ export function CampaignMatchBanner({ url }: { url: string }) {
       if (!cancelled) {
         setCampaign(r.campaign);
         setLoading(false);
+        if (r.campaign && onMatch) onMatch(r.campaign);
       }
     }, 350);
 
@@ -43,7 +55,7 @@ export function CampaignMatchBanner({ url }: { url: string }) {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [url]);
+  }, [url, onMatch]);
 
   if (loading || !campaign) return null;
 
