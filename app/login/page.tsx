@@ -3,10 +3,15 @@ import LoginForm from "./LoginForm";
 
 export const metadata = { title: "Sign in" };
 
-type PageProps = { searchParams: { redirectTo?: string } };
+type PageProps = {
+  searchParams: { redirectTo?: string; reset?: string };
+};
 
 export default function LoginPage({ searchParams }: PageProps) {
   const redirectTo = searchParams.redirectTo ?? "/";
+  // ?reset=ok comes from /auth/reset on a successful password change.
+  // We surface it here so the user knows the new password is live.
+  const resetOk = searchParams.reset === "ok";
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 py-12">
@@ -20,6 +25,15 @@ export default function LoginPage({ searchParams }: PageProps) {
             Sign in to manage your closet and looks.
           </p>
         </div>
+
+        {resetOk ? (
+          <div
+            role="status"
+            className="mb-4 text-sm text-text bg-card border border-border rounded-2xl px-4 py-3"
+          >
+            Password updated. Sign in with your new password.
+          </div>
+        ) : null}
 
         <LoginForm redirectTo={redirectTo} />
 

@@ -51,6 +51,11 @@ function rowToProduct(row: CacheRow): AmazonProduct {
 // images stay fresh-ish. PA-API rate limits make truly-fresh impractical;
 // 7 days is a reasonable middle ground for shopping commerce.
 const CACHE_TTL_DAYS = 7;
+// Failed rows retry much sooner — Microlink is flaky on Amazon (occasional
+// Captchas / promo pages return no product data) and a 7-day wait would
+// strand campaign ASINs as bare codes. 1 hour gives transient failures
+// time to clear without hammering the API on every dashboard render.
+const FAILED_RETRY_MS = 60 * 60 * 1000;
 
 /**
  * Look up enriched product info for a list of ASINs. Returns a Map keyed by
@@ -87,8 +92,14 @@ export async function fetchAmazonProductsForAsins(
     map.set(row.asin, rowToProduct(row));
   }
 
-  // Identify which ASINs need (re-)enrichment.
-  const staleCutoff = new Date(Date.now() - CACHE_TTL_DAYS * 86400 * 1000);
+  // Identify which ASINs need (re-)enrichment. Two TTLs:
+  //   - complete rows refresh after CACHE_TTL_DAYS
+  //   - failed rows retry after FAILED_RETRY_MS (much sooner — Microlink
+  //     flakiness is the dominant failure mode and recovers within minutes)
+  const completeStaleCutoff = new Date(
+    Date.now() - CACHE_TTL_DAYS * 86400 * 1000,
+  );
+  const failedStaleCutoff = new Date(Date.now() - FAILED_RETRY_MS);
   const toEnrich: string[] = [];
   for (const asin of dedupedAsins) {
     const cached = map.get(asin);
@@ -96,14 +107,13 @@ export async function fetchAmazonProductsForAsins(
       toEnrich.push(asin);
       continue;
     }
-    // Failed fetches: don't retry every render — that thrashes PA-API.
-    // The retry happens only when last_fetched_at crosses TTL.
-    if (cached.fetchStatus === "failed" || cached.fetchStatus === "complete") {
-      const last = cached.lastFetchedAt
-        ? new Date(cached.lastFetchedAt)
-        : null;
-      if (!last || last < staleCutoff) toEnrich.push(asin);
+    const last = cached.lastFetchedAt ? new Date(cached.lastFetchedAt) : null;
+    if (cached.fetchStatus === "complete") {
+      if (!last || last < completeStaleCutoff) toEnrich.push(asin);
+    } else if (cached.fetchStatus === "failed") {
+      if (!last || last < failedStaleCutoff) toEnrich.push(asin);
     }
+    // pending: another render is already enriching; don't pile on
   }
 
   if (toEnrich.length > 0) {

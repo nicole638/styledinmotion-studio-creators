@@ -15,8 +15,12 @@ export async function forgotPasswordAction(
   if (!email) return { error: "Enter your email.", notice: null };
 
   const supabase = createClient();
+  // The redirect MUST be on the allowed-redirect-URLs list in Supabase
+  // (Auth → URL Configuration). Web users land at /auth/reset here.
+  // iOS users come through styledinmotion://auth/reset (configured
+  // independently in the mobile build).
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://studio.styledinmotion.studio"}/auth/confirm`,
+    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://studio.styledinmotion.studio"}/auth/reset`,
   });
 
   if (error) {
