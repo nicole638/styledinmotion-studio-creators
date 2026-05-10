@@ -10,6 +10,7 @@ const ADMIN_EMAILS = new Set<string>([
   "nicole@wisewayssolutions.net",
   "nicole@styledinmotion.app",
   "nicole@testcreator.com",
+  "kerri@styledinmotion.app",
 ]);
 
 export async function requireAdmin(): Promise<{
