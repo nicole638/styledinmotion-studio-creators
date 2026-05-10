@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Upload, X, Sparkles } from "lucide-react";
+import { Loader2, Upload, X, Sparkles, ExternalLink } from "lucide-react";
 import {
   scrapeUrlAction,
   addClosetItemAction,
@@ -197,13 +197,30 @@ function SingleUrlForm({ initialUrl = "" }: { initialUrl?: string }) {
       {error ? (
         <div className="text-sm text-[#B53D2A] bg-[#FBE9E5] border border-[#F4C7BF] rounded-2xl px-4 py-3 space-y-2">
           <p>{error}</p>
-          <button
-            type="button"
-            onClick={handleManual}
-            className="text-xs underline underline-offset-2 hover:no-underline"
-          >
-            Or add it manually instead →
-          </button>
+          <div className="flex items-center gap-4 flex-wrap text-xs">
+            {/* Open the URL in a new tab so the creator can verify it's
+                the right product page before falling through to manual
+                entry. Some merchants block the scraper but render fine
+                in a normal browser. */}
+            {/^https?:\/\//i.test(url.trim()) ? (
+              <a
+                href={url.trim()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 underline underline-offset-2 hover:no-underline"
+              >
+                <ExternalLink size={11} strokeWidth={2.25} />
+                Open product page
+              </a>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleManual}
+              className="underline underline-offset-2 hover:no-underline"
+            >
+              Or add it manually instead →
+            </button>
+          </div>
         </div>
       ) : null}
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sparkles, Clock } from "lucide-react";
+import Link from "next/link";
+import { Sparkles, Clock, ExternalLink } from "lucide-react";
 import { findCampaignForUrlAction } from "@/lib/campaigns/lookup";
 import type { Campaign } from "@/types/campaigns";
 import { CAMPAIGN_TYPE_LABEL } from "@/types/campaigns";
@@ -72,6 +73,17 @@ export function CampaignMatchBanner({ url }: { url: string }) {
                   ? "Ends tomorrow"
                   : `${daysLeft} days left`}
           </span>
+          {campaign.campaignUrl ? (
+            <Link
+              href={campaign.campaignUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-rose hover:underline"
+            >
+              <ExternalLink size={11} strokeWidth={2.25} />
+              View brand brief
+            </Link>
+          ) : null}
         </p>
       </div>
     </div>
