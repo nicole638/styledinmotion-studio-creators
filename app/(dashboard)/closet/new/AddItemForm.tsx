@@ -16,6 +16,21 @@ import type { Campaign } from "@/types/campaigns";
 
 type Mode = "single" | "bulk";
 
+// Mirrors `Category` in types/closet.ts and the dropdown options on
+// the Edit Item form. Keep these in sync — Postgres column is text
+// but the UI funnels users into this controlled set.
+const CATEGORIES = [
+  "Top",
+  "Pants",
+  "Dress",
+  "Shoes",
+  "Bag",
+  "Jewelry",
+  "Accessory",
+  "Outerwear",
+  "Other",
+] as const;
+
 const EMPTY_DRAFT: AddItemDraft = {
   name: "",
   brand: "",
@@ -395,12 +410,23 @@ function ReviewForm({
           onChange={(v) => set("price", v)}
           placeholder="$148"
         />
-        <Field
-          label="Category"
-          value={draft.category}
-          onChange={(v) => set("category", v)}
-          placeholder="Dress, Top, Bottom…"
-        />
+        <div>
+          <label className="block text-xs uppercase tracking-widest text-muted mb-1.5">
+            Category
+          </label>
+          <select
+            value={draft.category}
+            onChange={(e) => set("category", e.target.value)}
+            className="w-full rounded-2xl border border-border bg-card px-4 py-3 text-sm outline-none focus:border-rose"
+          >
+            <option value="">— select —</option>
+            {CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
         <Field
           label="Default size worn"
           value={draft.defaultWornSize}
