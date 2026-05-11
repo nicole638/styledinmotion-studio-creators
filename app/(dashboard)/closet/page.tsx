@@ -36,6 +36,23 @@ export default async function ClosetPage({
     fetchClosetCounts(),
   ]);
 
+  // Which of the visible items already have an open consignment request?
+  // Used to render the "Consigning ✓" state on those cards instead of
+  // the active "Consign" pill. Server-side SELECT scoped by RLS.
+  const openConsignmentItemIds: string[] = [];
+  if (user && items.length > 0) {
+    const { data: consignRows } = await supabase
+      .from("consignment_requests")
+      .select("item_id")
+      .eq("creator_id", user.id)
+      .in("status", ["submitted", "accepted", "authenticated", "listed"]);
+    if (consignRows) {
+      for (const r of consignRows as Array<{ item_id: string }>) {
+        openConsignmentItemIds.push(r.item_id);
+      }
+    }
+  }
+
   return (
     <div className="max-w-6xl">
       <p className="text-xs uppercase tracking-[0.25em] text-rose mb-3">
@@ -67,6 +84,7 @@ export default async function ClosetPage({
             initialItems={items}
             creatorId={user.id}
             archivedView={view === "archived"}
+            openConsignmentItemIds={openConsignmentItemIds}
           />
         ) : null}
       </div>

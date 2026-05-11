@@ -8,6 +8,7 @@ import {
   type ClosetItemRow,
 } from "@/types/closet";
 import { ItemCard } from "./ItemCard";
+import { ConsignmentModal } from "./ConsignmentModal";
 
 interface Props {
   initialItems: ClosetItem[];
@@ -15,6 +16,9 @@ interface Props {
   /** When true, the list is showing the archived bucket — Realtime updates that
    *  flip a row to/from archived should add/remove rather than swap-in-place. */
   archivedView: boolean;
+  /** Item ids that already have an open consignment request — used to flip
+   *  the "Consign" pill into a "Consigning ✓" state on those cards. */
+  openConsignmentItemIds: string[];
 }
 
 /**
@@ -31,8 +35,15 @@ export function ClosetItemsList({
   initialItems,
   creatorId,
   archivedView,
+  openConsignmentItemIds,
 }: Props) {
   const [items, setItems] = useState<ClosetItem[]>(initialItems);
+  const [consigningIds, setConsigningIds] = useState<Set<string>>(
+    () => new Set(openConsignmentItemIds),
+  );
+  const [consignModalItem, setConsignModalItem] = useState<ClosetItem | null>(
+    null,
+  );
 
   // Re-sync from server props if the parent re-renders with a new initial set
   // (e.g. after navigating with different search/category filters).
@@ -131,12 +142,35 @@ export function ClosetItemsList({
   }
 
   return (
-    <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-      {ordered.map((item) => (
-        <li key={item.id}>
-          <ItemCard item={item} />
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        {ordered.map((item) => (
+          <li key={item.id}>
+            <ItemCard
+              item={item}
+              isConsigning={consigningIds.has(item.id)}
+              onConsignTap={(it) => setConsignModalItem(it)}
+            />
+          </li>
+        ))}
+      </ul>
+
+      {consignModalItem ? (
+        <ConsignmentModal
+          item={consignModalItem}
+          onClose={() => setConsignModalItem(null)}
+          onSubmitted={() => {
+            // Mark this item as consigning so the pill swaps to the
+            // ✓ state immediately, then stay on the success screen
+            // until the user closes the modal themselves.
+            setConsigningIds((prev) => {
+              const next = new Set(prev);
+              next.add(consignModalItem.id);
+              return next;
+            });
+          }}
+        />
+      ) : null}
+    </>
   );
 }
