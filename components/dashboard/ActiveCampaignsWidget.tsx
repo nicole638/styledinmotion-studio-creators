@@ -27,8 +27,16 @@ const urlForCampaignAsin = (campaign: Campaign, asin: string): string =>
  * hidden — if no active campaigns, the widget renders nothing rather than
  * a placeholder, so dashboards stay clean during quiet weeks.
  */
+// Display cap on the dashboard widget. Holds enough campaigns that
+// admins don't silently hide ones they just added, but stops short of
+// flooding the page when the roster grows. Raise if the active count
+// regularly exceeds this — the layout flows fine vertically.
+const MAX_CAMPAIGNS_ON_DASHBOARD = 20;
+
 export async function ActiveCampaignsWidget() {
-  const campaigns = await listActiveCampaignsForCreator(5);
+  const campaigns = await listActiveCampaignsForCreator(
+    MAX_CAMPAIGNS_ON_DASHBOARD,
+  );
   if (campaigns.length === 0) return null;
 
   // One enrichment pass for ALL ASINs across all visible campaigns. The
@@ -56,10 +64,28 @@ export async function ActiveCampaignsWidget() {
         </p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        {campaigns.map((c) => (
-          <CampaignCard key={c.id} campaign={c} products={products} />
-        ))}
+      {/* Horizontal-scroll shelf so the dashboard's content underneath
+          (closet snapshot, recent looks, etc.) stays close to the fold
+          even when the active-campaign roster grows past 4-5. Each
+          card is fixed-width so they don't squish; the row scrolls
+          left-right. -mx + px pattern lets the cards bleed to the
+          viewport edge while keeping the section heading aligned with
+          the dashboard's content column.
+
+          Mobile and desktop both get the same shelf — on wide
+          screens you can typically see 3 cards at once; on smaller
+          viewports, 1-2 cards visible, swipe for the rest. */}
+      <div className="-mx-4 px-4 md:-mx-6 md:px-6">
+        <div className="flex gap-3 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-2">
+          {campaigns.map((c) => (
+            <div
+              key={c.id}
+              className="snap-start shrink-0 w-[min(85vw,22rem)]"
+            >
+              <CampaignCard campaign={c} products={products} />
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );
