@@ -182,6 +182,9 @@ export async function addClosetItemAction(
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
+  const photoTrimmed = draft.photoUrl.trim();
+  const originalTrimmed = draft.originalPhotoUrl.trim();
+
   const payload = {
     creator_id: user.id,
     name: safeName(draft.name, draft.url),
@@ -189,8 +192,8 @@ export async function addClosetItemAction(
     category: draft.category.trim() || null,
     price: draft.price.trim() || null,
     url: draft.url.trim() || null,
-    photo_url: draft.photoUrl.trim() || null,
-    original_photo_url: draft.originalPhotoUrl.trim() || null,
+    photo_url: photoTrimmed || null,
+    original_photo_url: originalTrimmed || null,
     default_worn_size: draft.defaultWornSize.trim() || null,
     archived: false,
     // Mark complete so the trigger doesn't re-fire and the closet card
@@ -209,8 +212,44 @@ export async function addClosetItemAction(
     return { ok: false, error: error.message };
   }
 
+  // Fire-and-forget Photoroom cutout. The EF reads the saved photo_url,
+  // calls Photoroom remove_bg, uploads to item-photos/cutouts/..., and
+  // UPDATEs photo_url + cutout_photo_url. Realtime on creator_items
+  // updates the closet card automatically when it lands.
+  //
+  // We only kick this off when the source is an Amazon CDN URL (i.e.
+  // came from the campaign auto-fill flow or a pasted Amazon product
+  // photo). Other merchant CDNs are skipped for now — their photos
+  // already vary in quality and the cutout success rate is lower.
+  if (photoTrimmed && /m\.media-amazon\.com\/images\/I\//.test(photoTrimmed)) {
+    void triggerItemCutout(data.id);
+  }
+
   revalidatePath("/closet");
   return { ok: true, itemId: data.id };
+}
+
+/**
+ * Fire the cutout-item-photo Edge Function for a newly-saved item.
+ * Service-role invoke (no need for the user's JWT), doesn't await long
+ * enough to block the save — Photoroom can take 5-10s and we don't
+ * want the user staring at a spinner. Realtime updates the card when
+ * the EF completes.
+ */
+async function triggerItemCutout(itemId: string): Promise<void> {
+  try {
+    // Use the admin client to invoke server-to-server without requiring
+    // the caller's JWT.
+    const { createAdminClient } = await import("@/lib/supabase/admin");
+    const admin = createAdminClient();
+    await admin.functions
+      .invoke("cutout-item-photo", { body: { item_id: itemId } })
+      .catch((e) => {
+        console.warn("[closet] cutout invoke failed:", e);
+      });
+  } catch (e) {
+    console.warn("[closet] cutout trigger failed:", e);
+  }
 }
 
 /**
