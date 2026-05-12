@@ -44,7 +44,7 @@ export default async function CollagePage() {
   const totalCount = totalActiveCount ?? 0;
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-7xl">
       <p className="text-xs uppercase tracking-[0.25em] text-rose mb-3">
         Collage builder
       </p>

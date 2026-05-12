@@ -363,9 +363,15 @@ export function CollageEditor({ creatorId, cutoutItems, initial }: Props) {
   const cutoutCount = layers.filter((l) => l.kind === "cutout").length;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-8 items-start">
+    // Fixed-width left column at 540px (canvas display size) so the layout
+    // carousel — which uses `w-max` for its scroll track — doesn't widen
+    // the column past the canvas and crush the right-side controls. The
+    // create flow only escaped this because the carousel is hidden until
+    // the first item is added; the edit flow opens with items present and
+    // would otherwise smoosh the toolbox on first paint.
+    <div className="grid grid-cols-1 xl:grid-cols-[540px_minmax(0,1fr)] gap-8 items-start">{/* xl: not lg: — the dashboard sidebar eats ~256px, so 1024-1280 viewports leave too little room for the 540px canvas plus the right rail (title + Add buttons + 2-col template grid + cutout picker + Save). Stack vertically until 1280px+. */}
       {/* Left: layout carousel + canvas + controls */}
-      <div className="space-y-3">
+      <div className="space-y-3 min-w-0">
         {cutoutCount > 0 && cutoutCount <= 6 ? (
           <LayoutCarousel
             itemCount={cutoutCount}

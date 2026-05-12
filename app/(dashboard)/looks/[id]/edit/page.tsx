@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { fetchClosetItems } from "@/lib/closet/queries";
 import { LookComposer } from "@/components/looks/LookComposer";
 import { CollageEditor } from "@/components/collage/CollageEditor";
+import { ShareLookButton } from "@/components/looks/ShareLookButton";
 import type { ComposerItem } from "@/lib/looks/mutations";
 import { type LookRow, deriveStatus } from "@/types/look";
 import { jsonToLayout } from "@/types/collage";
@@ -64,8 +65,9 @@ export default async function EditLookPage({
 
     const cutoutItems = ((rows ?? []) as ClosetItemRow[]).map(rowToClosetItem);
 
+    const lookStatus = deriveStatus(look as LookRow);
     return (
-      <div className="max-w-6xl">
+      <div className="max-w-7xl">
         <Link
           href={`/looks/${look.id}`}
           className="inline-flex items-center gap-1 text-sm text-muted hover:text-text mb-4"
@@ -73,19 +75,30 @@ export default async function EditLookPage({
           <ChevronLeft size={14} strokeWidth={2} /> Look detail
         </Link>
 
-        <p className="text-xs uppercase tracking-[0.25em] text-rose mb-3">
-          Edit collage
-        </p>
-        <h1 className="font-display text-4xl">
-          {look.title || "Untitled collage"}
-        </h1>
-        <p className="mt-2 text-xs uppercase tracking-widest text-muted">
-          {deriveStatus(look as LookRow) === "published"
-            ? "Published"
-            : deriveStatus(look as LookRow) === "draft"
-              ? "Draft"
-              : "Archived"}
-        </p>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.25em] text-rose mb-3">
+              Edit collage
+            </p>
+            <h1 className="font-display text-4xl">
+              {look.title || "Untitled collage"}
+            </h1>
+            <p className="mt-2 text-xs uppercase tracking-widest text-muted">
+              {lookStatus === "published"
+                ? "Published"
+                : lookStatus === "draft"
+                  ? "Draft"
+                  : "Archived"}
+            </p>
+          </div>
+          {lookStatus === "published" ? (
+            <ShareLookButton
+              shortCode={look.short_code}
+              title={look.title || "Untitled collage"}
+              variant="primary"
+            />
+          ) : null}
+        </div>
         <p className="mt-3 text-muted leading-relaxed max-w-prose">
           Add or remove pieces, rearrange the layout, change the background
           or template. Saving re-renders the flattened cover image.
@@ -128,6 +141,7 @@ export default async function EditLookPage({
 
   const closet = await fetchClosetItems({ archivedOnly: false });
 
+  const lookStatus = deriveStatus(look as LookRow);
   return (
     <div className="max-w-3xl">
       <Link
@@ -137,19 +151,30 @@ export default async function EditLookPage({
         <ChevronLeft size={14} strokeWidth={2} /> Look detail
       </Link>
 
-      <p className="text-xs uppercase tracking-[0.25em] text-rose mb-3">
-        Edit look
-      </p>
-      <h1 className="font-display text-4xl">
-        {look.title || "Untitled look"}
-      </h1>
-      <p className="mt-2 text-xs uppercase tracking-widest text-muted">
-        {deriveStatus(look as LookRow) === "published"
-          ? "Published"
-          : deriveStatus(look as LookRow) === "draft"
-            ? "Draft"
-            : "Archived"}
-      </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-[0.25em] text-rose mb-3">
+            Edit look
+          </p>
+          <h1 className="font-display text-4xl">
+            {look.title || "Untitled look"}
+          </h1>
+          <p className="mt-2 text-xs uppercase tracking-widest text-muted">
+            {lookStatus === "published"
+              ? "Published"
+              : lookStatus === "draft"
+                ? "Draft"
+                : "Archived"}
+          </p>
+        </div>
+        {lookStatus === "published" ? (
+          <ShareLookButton
+            shortCode={look.short_code}
+            title={look.title || "Untitled look"}
+            variant="primary"
+          />
+        ) : null}
+      </div>
 
       <div className="mt-10 editorial-divider" />
 
