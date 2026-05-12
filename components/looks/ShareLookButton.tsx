@@ -51,11 +51,16 @@ export function ShareLookButton({
     e.stopPropagation();
 
     try {
-      if (typeof navigator !== "undefined" && "share" in navigator) {
+      // Use typeof checks rather than `"share" in navigator` — Navigator's
+      // lib.dom.d.ts type declares `share?:` as optional, which causes the
+      // `in` operator to narrow the else branch's navigator to `never` under
+      // strict TS. typeof on the property is a runtime check that doesn't
+      // confuse the type-checker.
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
         await navigator.share({ title: shareTitle, text: shareText, url });
       } else if (
         typeof navigator !== "undefined" &&
-        navigator.clipboard?.writeText
+        typeof navigator.clipboard?.writeText === "function"
       ) {
         await navigator.clipboard.writeText(url);
         setCopied(true);
