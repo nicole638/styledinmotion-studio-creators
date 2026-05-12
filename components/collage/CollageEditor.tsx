@@ -37,19 +37,38 @@ import { saveCollageAction } from "@/lib/collage/mutations";
 import type { ClosetItem } from "@/types/closet";
 import { createClient } from "@/lib/supabase/client";
 
+interface InitialCollage {
+  /** looks.id of the existing collage we're editing */
+  lookId: string;
+  /** Current title — pre-fills the title input */
+  title: string;
+  /** Rehydrated layout from looks.collage_layout JSONB */
+  layout: CollageLayout;
+  /** True when the look has no published_at — affects the action buttons */
+  isDraft: boolean;
+}
+
 interface Props {
   /** Auth.uid() — used as storage path prefix for the flattened PNG */
   creatorId: string;
   /** Cutout-ready closet items only (cutout_photo_url IS NOT NULL) */
   cutoutItems: ClosetItem[];
+  /**
+   * Set when editing an existing collage look. Pre-loads title + layers +
+   * background + template into editor state, and routes Save through
+   * saveCollageAction with lookId so the same row is updated rather than
+   * a new one inserted.
+   */
+  initial?: InitialCollage;
 }
 
 const MAX_LAYERS = 12;
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
-export function CollageEditor({ creatorId, cutoutItems }: Props) {
+export function CollageEditor({ creatorId, cutoutItems, initial }: Props) {
   const router = useRouter();
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const isEdit = initial !== undefined;
 
   const cutoutsById = useMemo(() => {
     const m = new Map<string, ClosetItem>();
@@ -57,13 +76,18 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
     return m;
   }, [cutoutItems]);
 
-  const [title, setTitle] = useState("");
-  const [template, setTemplate] = useState<TemplateId>("editorial");
-  const [background, setBackground] = useState(
-    getTemplateBackground("editorial"),
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [template, setTemplate] = useState<TemplateId>(
+    initial?.layout.template ?? "editorial",
   );
-  const [bgManuallyChanged, setBgManuallyChanged] = useState(false);
-  const [layers, setLayers] = useState<Layer[]>([]);
+  const [background, setBackground] = useState(
+    initial?.layout.background ??
+      getTemplateBackground(initial?.layout.template ?? "editorial"),
+  );
+  // In edit mode treat the loaded background as manually-chosen so swapping
+  // templates doesn't silently replace the creator's saved background color.
+  const [bgManuallyChanged, setBgManuallyChanged] = useState(isEdit);
+  const [layers, setLayers] = useState<Layer[]>(initial?.layout.layers ?? []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickerSearch, setPickerSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -307,6 +331,7 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
           layers,
         };
         const r = await saveCollageAction({
+          lookId: initial?.lookId,
           title,
           coverPhotoUrl: urlData.publicUrl,
           layout,
@@ -318,7 +343,14 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
           setError(r.error ?? "Could not save collage.");
           return;
         }
-        router.push(publish ? `/looks/${r.lookId}` : "/looks?view=draft");
+        // Edit mode: go back to the look detail page so the creator sees
+        // their changes applied. Create mode: keep the previous routing
+        // (look detail on publish, drafts tab on save-draft).
+        if (isEdit) {
+          router.push(`/looks/${r.lookId}`);
+        } else {
+          router.push(publish ? `/looks/${r.lookId}` : "/looks?view=draft");
+        }
         router.refresh();
       } catch (e: any) {
         setBusy(null);
@@ -551,24 +583,66 @@ export function CollageEditor({ creatorId, cutoutItems }: Props) {
 
         {/* Save */}
         <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-border">
-          <button
-            type="button"
-            onClick={() => handleSave(true)}
-            disabled={isBusy || layers.length === 0}
-            className="inline-flex items-center gap-2 rounded-full bg-rose text-white px-5 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
-          >
-            <Send size={14} strokeWidth={2} />
-            {busy === "publish" ? "Publishing…" : "Publish collage"}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSave(false)}
-            disabled={isBusy || layers.length === 0}
-            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-5 py-2.5 text-sm hover:border-rose disabled:opacity-60 transition-colors"
-          >
-            <Save size={14} strokeWidth={2} />
-            {busy === "draft" ? "Saving…" : "Save draft"}
-          </button>
+          {isEdit ? (
+            <>
+              {/* Edit mode — preserve published/draft state on primary save.
+                  Was-published collage: primary = "Save changes" (stays published).
+                  Was-draft collage:     primary = "Publish collage", secondary keeps as draft. */}
+              {initial!.isDraft ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleSave(true)}
+                    disabled={isBusy || layers.length === 0}
+                    className="inline-flex items-center gap-2 rounded-full bg-rose text-white px-5 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
+                  >
+                    <Send size={14} strokeWidth={2} />
+                    {busy === "publish" ? "Publishing…" : "Publish collage"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSave(false)}
+                    disabled={isBusy || layers.length === 0}
+                    className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-5 py-2.5 text-sm hover:border-rose disabled:opacity-60 transition-colors"
+                  >
+                    <Save size={14} strokeWidth={2} />
+                    {busy === "draft" ? "Saving…" : "Save draft"}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleSave(true)}
+                  disabled={isBusy || layers.length === 0}
+                  className="inline-flex items-center gap-2 rounded-full bg-rose text-white px-5 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
+                >
+                  <Save size={14} strokeWidth={2} />
+                  {busy === "publish" ? "Saving…" : "Save changes"}
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => handleSave(true)}
+                disabled={isBusy || layers.length === 0}
+                className="inline-flex items-center gap-2 rounded-full bg-rose text-white px-5 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
+              >
+                <Send size={14} strokeWidth={2} />
+                {busy === "publish" ? "Publishing…" : "Publish collage"}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSave(false)}
+                disabled={isBusy || layers.length === 0}
+                className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-5 py-2.5 text-sm hover:border-rose disabled:opacity-60 transition-colors"
+              >
+                <Save size={14} strokeWidth={2} />
+                {busy === "draft" ? "Saving…" : "Save draft"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

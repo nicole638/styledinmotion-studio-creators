@@ -12,6 +12,7 @@ import {
   DollarSign,
   Megaphone,
   FileSpreadsheet,
+  Store,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -38,6 +39,12 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
     href: "/admin/campaigns",
     label: "Campaigns",
     icon: Megaphone,
+    status: "live",
+  },
+  {
+    href: "/admin/awin-merchants",
+    label: "Awin merchants",
+    icon: Store,
     status: "live",
   },
   {

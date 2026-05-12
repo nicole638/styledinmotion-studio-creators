@@ -140,6 +140,103 @@ export function layoutToJson(layout: CollageLayout): CollageLayoutJsonV1 {
   };
 }
 
+/**
+ * Inverse of layoutToJson — rehydrate a saved CollageLayoutJsonV1 (read from
+ * looks.collage_layout) back into the in-memory CollageLayout shape the
+ * editor works with.
+ *
+ * Defensive: each kind is parsed independently, malformed layers are
+ * skipped rather than throwing so an edit session never blocks on a
+ * stale/partial JSONB row.
+ *
+ * Returns null when the input doesn't look like a collage at all
+ * (no items, no photos, no text) — callers fall back to a fresh
+ * blank canvas in that case.
+ */
+export function jsonToLayout(
+  json: unknown,
+): CollageLayout | null {
+  if (!json || typeof json !== "object") return null;
+  const j = json as Partial<CollageLayoutJsonV1>;
+
+  const template: TemplateId = (
+    ["style-journal", "editorial", "grid", "editorial-cover"] as TemplateId[]
+  ).includes(j.template as TemplateId)
+    ? (j.template as TemplateId)
+    : "editorial";
+
+  const background =
+    typeof j.background === "string" && /^#[0-9a-f]{6}$/i.test(j.background)
+      ? j.background
+      : getTemplateBackground(template);
+
+  const layers: Layer[] = [];
+
+  if (Array.isArray(j.items)) {
+    for (const item of j.items) {
+      if (!item || typeof item !== "object") continue;
+      if (typeof item.itemId !== "string") continue;
+      layers.push({
+        id: newLayerId(),
+        kind: "cutout",
+        itemId: item.itemId,
+        x: Number(item.x ?? CANVAS_SIZE / 2),
+        y: Number(item.y ?? CANVAS_SIZE / 2),
+        scale: Number(item.scale ?? 1),
+        rotation: Number(item.rotation ?? 0),
+        zIndex: Number(item.zIndex ?? layers.length),
+      });
+    }
+  }
+
+  if (Array.isArray(j.photos)) {
+    for (const p of j.photos) {
+      if (!p || typeof p !== "object") continue;
+      if (typeof p.photoUrl !== "string") continue;
+      layers.push({
+        id: typeof p.id === "string" ? p.id : newLayerId(),
+        kind: "photo",
+        photoUrl: p.photoUrl,
+        x: Number(p.x ?? CANVAS_SIZE / 2),
+        y: Number(p.y ?? CANVAS_SIZE / 2),
+        scale: Number(p.scale ?? 1),
+        rotation: Number(p.rotation ?? 0),
+        zIndex: Number(p.zIndex ?? layers.length),
+      });
+    }
+  }
+
+  if (Array.isArray(j.text)) {
+    for (const t of j.text) {
+      if (!t || typeof t !== "object") continue;
+      if (typeof t.text !== "string") continue;
+      layers.push({
+        id: typeof t.id === "string" ? t.id : newLayerId(),
+        kind: "text",
+        text: t.text,
+        fontSize: Number(t.fontSize ?? DEFAULT_TEXT_FONT_SIZE),
+        color: typeof t.color === "string" ? t.color : DEFAULT_TEXT_COLOR,
+        fontFamily: (["serif", "sans", "display"] as FontFamily[]).includes(
+          t.fontFamily as FontFamily,
+        )
+          ? (t.fontFamily as FontFamily)
+          : "display",
+        bold: Boolean(t.bold),
+        italic: Boolean(t.italic),
+        x: Number(t.x ?? CANVAS_SIZE / 2),
+        y: Number(t.y ?? CANVAS_SIZE / 2),
+        scale: Number(t.scale ?? 1),
+        rotation: Number(t.rotation ?? 0),
+        zIndex: Number(t.zIndex ?? layers.length),
+      });
+    }
+  }
+
+  if (layers.length === 0) return null;
+
+  return { template, background, layers };
+}
+
 // ─────────────── Templates ───────────────
 
 export interface TemplateOption {
