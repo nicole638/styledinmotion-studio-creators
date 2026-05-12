@@ -13,7 +13,7 @@ import {
   type ClosetItemRow,
   rowToClosetItem,
 } from "@/types/closet";
-import { ShareLookButton } from "@/components/looks/ShareLookButton";
+import { ShareLookMenu } from "@/components/looks/ShareLookMenu";
 
 export const metadata = { title: "Look" };
 
@@ -88,10 +88,10 @@ export default async function LookDetailPage({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {look.status === "published" ? (
-            <ShareLookButton
+            <ShareLookMenu
               shortCode={look.shortCode}
               title={look.title || "Untitled look"}
-              variant="primary"
+              coverPhotoUrl={look.coverPhotoUrl}
             />
           ) : null}
           <Link

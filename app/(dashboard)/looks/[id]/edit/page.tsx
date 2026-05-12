@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { fetchClosetItems } from "@/lib/closet/queries";
 import { LookComposer } from "@/components/looks/LookComposer";
 import { CollageEditor } from "@/components/collage/CollageEditor";
-import { ShareLookButton } from "@/components/looks/ShareLookButton";
+import { ShareLookMenu } from "@/components/looks/ShareLookMenu";
 import type { ComposerItem } from "@/lib/looks/mutations";
 import { type LookRow, deriveStatus } from "@/types/look";
 import { jsonToLayout } from "@/types/collage";
@@ -92,10 +92,10 @@ export default async function EditLookPage({
             </p>
           </div>
           {lookStatus === "published" ? (
-            <ShareLookButton
+            <ShareLookMenu
               shortCode={look.short_code}
               title={look.title || "Untitled collage"}
-              variant="primary"
+              coverPhotoUrl={look.cover_photo_url ?? null}
             />
           ) : null}
         </div>
@@ -168,10 +168,10 @@ export default async function EditLookPage({
           </p>
         </div>
         {lookStatus === "published" ? (
-          <ShareLookButton
+          <ShareLookMenu
             shortCode={look.short_code}
             title={look.title || "Untitled look"}
-            variant="primary"
+            coverPhotoUrl={look.cover_photo_url ?? null}
           />
         ) : null}
       </div>
