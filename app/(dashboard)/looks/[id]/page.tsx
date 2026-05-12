@@ -13,6 +13,7 @@ import {
   type ClosetItemRow,
   rowToClosetItem,
 } from "@/types/closet";
+import { ShareLookButton } from "@/components/looks/ShareLookButton";
 
 export const metadata = { title: "Look" };
 
@@ -85,13 +86,22 @@ export default async function LookDetailPage({
             {look.title || "Untitled look"}
           </h1>
         </div>
-        <Link
-          href={`/looks/${look.id}/edit`}
-          className="inline-flex items-center gap-2 rounded-full bg-rose text-white px-4 py-2 text-sm font-medium hover:opacity-90 transition-opacity shrink-0"
-        >
-          <Pencil size={14} strokeWidth={2} />
-          Edit
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          {look.status === "published" ? (
+            <ShareLookButton
+              shortCode={look.shortCode}
+              title={look.title || "Untitled look"}
+              variant="primary"
+            />
+          ) : null}
+          <Link
+            href={`/looks/${look.id}/edit`}
+            className="inline-flex items-center gap-2 rounded-full bg-rose text-white px-4 py-2 text-sm font-medium hover:opacity-90 transition-opacity"
+          >
+            <Pencil size={14} strokeWidth={2} />
+            Edit
+          </Link>
+        </div>
       </div>
       {look.caption ? (
         <p className="mt-3 text-muted leading-relaxed max-w-prose">

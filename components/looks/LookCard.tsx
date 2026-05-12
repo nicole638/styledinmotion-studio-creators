@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { type Look, formatLookDate } from "@/types/look";
+import { ShareLookButton } from "./ShareLookButton";
 
 interface Props {
   look: Look;
@@ -31,6 +32,18 @@ export function LookCard({ look }: Props) {
           </div>
         )}
         <StatusBadge status={look.status} />
+        {/* Share affordance — only meaningful for published looks (drafts +
+            archived have no public URL). Sits top-right so the status badge
+            (top-left) stays its own beat. */}
+        {look.status === "published" ? (
+          <div className="absolute top-2 right-2">
+            <ShareLookButton
+              shortCode={look.shortCode}
+              title={title}
+              variant="overlay"
+            />
+          </div>
+        ) : null}
       </div>
       <div className="p-3">
         <div className="text-sm font-medium truncate">{title}</div>
