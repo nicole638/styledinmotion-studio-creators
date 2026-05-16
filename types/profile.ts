@@ -42,6 +42,11 @@ export interface CreatorProfile {
   /** Set once the creator has actively chosen between their tag and
    *  the platform tag. NULL = surface a decision-needed banner. */
   amazonSetupAcknowledgedAt: string | null;
+  /** PayPal email — where confirmed commissions get paid out. NULL means
+   *  the creator hasn't set up payment yet; balances accrue but no payouts. */
+  payoutEmail: string;
+  /** Payment method: 'paypal' (v1), 'stripe' (v2 deferred), 'bank' (v2). */
+  payoutMethod: "paypal" | "stripe" | "bank";
   // Read-only badges
   isBetaCreator: boolean;
   isFoundingCreator: boolean;
@@ -79,6 +84,8 @@ export interface CreatorProfileRow {
   amazon_associates_tag: string | null;
   amazon_use_own_tag: boolean;
   amazon_setup_acknowledged_at: string | null;
+  payout_email: string | null;
+  payout_method: string | null;
   is_beta_creator: boolean;
   is_founding_creator: boolean;
   subscription_status: string;
@@ -132,6 +139,13 @@ export function rowToProfile(row: CreatorProfileRow): CreatorProfile {
     amazonAssociatesTag: row.amazon_associates_tag ?? "",
     amazonUseOwnTag: row.amazon_use_own_tag ?? false,
     amazonSetupAcknowledgedAt: row.amazon_setup_acknowledged_at,
+    payoutEmail: row.payout_email ?? "",
+    // Default to paypal — column default in the DB is also 'paypal'. Narrow
+    // to the union type at read time so consumers don't get a raw string.
+    payoutMethod:
+      row.payout_method === "stripe" || row.payout_method === "bank"
+        ? row.payout_method
+        : "paypal",
     isBetaCreator: row.is_beta_creator,
     isFoundingCreator: row.is_founding_creator,
     subscriptionStatus: row.subscription_status,

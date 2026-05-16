@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowUpRight, DollarSign, MousePointerClick } from "lucide-react";
+import { ArrowUpRight, DollarSign, MousePointerClick, Wallet, Clock } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import {
   fetchEarningsSummary,
@@ -23,11 +23,27 @@ export default async function EarningsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [summary, recent, topLooks] = await Promise.all([
+  const [summary, recent, topLooks, { data: profile }] = await Promise.all([
     fetchEarningsSummary(),
     fetchRecentCommissions(25),
     fetchTopLooksByEarnings(5),
+    // Fetch payout_email so we can surface a nudge banner when commissions
+    // exist but no payment method is set — same UX as iOS dashboard banner.
+    supabase
+      .from("creator_profiles")
+      .select("payout_email")
+      .eq("creator_id", user.id)
+      .maybeSingle(),
   ]);
+
+  const hasCommissions =
+    summary.countsByStatus.pending +
+      summary.countsByStatus.confirmed +
+      summary.countsByStatus.paid >
+    0;
+  const needsPayoutSetup =
+    hasCommissions &&
+    (!profile?.payout_email || profile.payout_email.trim() === "");
 
   const hasAnyData =
     summary.totalClicks > 0 ||
@@ -35,6 +51,14 @@ export default async function EarningsPage() {
     summary.countsByStatus.confirmed > 0 ||
     summary.countsByStatus.paid > 0 ||
     summary.countsByStatus.rejected > 0;
+
+  // In-between state: creator has driven clicks but Amazon hasn't reported
+  // any commissions yet. Typical lag is 1-14 days from click to confirmed
+  // sale; for newly-active creators or fresh API integrations the whole
+  // table can sit at zero for weeks. Surface what they DO have (click
+  // activity) so the page doesn't read as "you've earned nothing."
+  const hasClicksButNoSales =
+    summary.totalClicks > 0 && !hasCommissions;
 
   return (
     <div className="max-w-5xl">
@@ -49,6 +73,54 @@ export default async function EarningsPage() {
       </p>
 
       <div className="mt-10 editorial-divider" />
+
+      {needsPayoutSetup ? (
+        <Link
+          href="/profile#payments"
+          className="mt-8 flex items-center justify-between gap-4 rounded-2xl border border-rose/40 bg-rose/5 px-5 py-4 hover:bg-rose/10 transition-colors group"
+        >
+          <div className="flex items-start gap-3 min-w-0">
+            <span className="shrink-0 mt-0.5 inline-flex items-center justify-center w-9 h-9 rounded-full bg-rose text-white">
+              <Wallet size={16} strokeWidth={1.75} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-medium">
+                You&apos;ve earned commissions — set up how you get paid.
+              </p>
+              <p className="text-xs text-muted mt-0.5">
+                Add your PayPal email so we can release your confirmed
+                balance once it crosses $25.
+              </p>
+            </div>
+          </div>
+          <ArrowUpRight
+            size={16}
+            strokeWidth={2}
+            className="shrink-0 text-rose group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+          />
+        </Link>
+      ) : null}
+
+      {hasClicksButNoSales ? (
+        <div className="mt-8 rounded-2xl border border-border bg-card px-5 py-4 flex items-start gap-3">
+          <span className="shrink-0 mt-0.5 inline-flex items-center justify-center w-9 h-9 rounded-full bg-bg border border-border">
+            <Clock size={16} strokeWidth={1.75} className="text-rose" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-medium">
+              {summary.totalClicks.toLocaleString()} click
+              {summary.totalClicks === 1 ? "" : "s"} so far — no purchases
+              reported yet.
+            </p>
+            <p className="mt-1 text-xs text-muted leading-relaxed">
+              Commissions show up 1–14 days after a shopper completes their
+              order. Amazon confirms via daily reports; clicks from this
+              week typically post by next week. Looks driving clicks are
+              doing exactly what they should.
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {!hasAnyData ? (
         <EmptyState />
@@ -289,19 +361,28 @@ function EmptyState() {
       <div className="mx-auto w-12 h-12 rounded-full bg-bg flex items-center justify-center mb-5">
         <DollarSign size={20} strokeWidth={1.5} className="text-rose" />
       </div>
-      <h2 className="font-display text-2xl">No commissions yet.</h2>
+      <h2 className="font-display text-2xl">No clicks or sales yet.</h2>
       <p className="mt-3 text-sm text-muted max-w-md mx-auto leading-relaxed">
-        Once shoppers click through your shop links and complete purchases,
-        the affiliate network will report sales back and your earnings will
-        appear here. Updates land a few days behind each sale.
+        Publish a look, share it with your audience, and click activity
+        will start flowing in here. When a shopper purchases, the
+        commission lands 1–14 days later — that&apos;s how long Amazon
+        takes to confirm.
       </p>
-      <Link
-        href="/looks/new"
-        className="inline-flex items-center justify-center gap-1 mt-6 rounded-full bg-rose text-white px-5 py-2.5 text-sm font-medium hover:opacity-90 transition-opacity"
-      >
-        Publish a new look
-        <ArrowUpRight size={14} strokeWidth={2} />
-      </Link>
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+        <Link
+          href="/looks/new"
+          className="inline-flex items-center justify-center gap-1 rounded-full bg-rose text-white px-5 py-2.5 text-sm font-medium hover:opacity-90 transition-opacity"
+        >
+          Publish a new look
+          <ArrowUpRight size={14} strokeWidth={2} />
+        </Link>
+        <Link
+          href="/profile#payments"
+          className="inline-flex items-center justify-center gap-1 rounded-full border border-border bg-bg px-5 py-2.5 text-sm hover:border-rose transition-colors"
+        >
+          Set up payment
+        </Link>
+      </div>
     </div>
   );
 }

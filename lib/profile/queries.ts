@@ -6,7 +6,7 @@ import {
 } from "@/types/profile";
 
 const PROFILE_COLUMNS =
-  "creator_id, username, first_name, last_name, bio, photo_url, location, instagram_handle, instagram_enabled, tiktok_handle, tiktok_enabled, youtube_handle, youtube_enabled, pinterest_handle, pinterest_enabled, height_cm, weight_kg, measurement_unit, top_size, bottom_size, dress_size, shoe_size, bra_size, body_type_self_tags, amazon_associates_tag, amazon_use_own_tag, amazon_setup_acknowledged_at, is_beta_creator, is_founding_creator, subscription_status, follower_count, follower_count_source, profile_completed_at";
+  "creator_id, username, first_name, last_name, bio, photo_url, location, instagram_handle, instagram_enabled, tiktok_handle, tiktok_enabled, youtube_handle, youtube_enabled, pinterest_handle, pinterest_enabled, height_cm, weight_kg, measurement_unit, top_size, bottom_size, dress_size, shoe_size, bra_size, body_type_self_tags, amazon_associates_tag, amazon_use_own_tag, amazon_setup_acknowledged_at, payout_email, payout_method, is_beta_creator, is_founding_creator, subscription_status, follower_count, follower_count_source, profile_completed_at";
 
 /**
  * Load the signed-in creator's profile. RLS scopes via auth.uid().

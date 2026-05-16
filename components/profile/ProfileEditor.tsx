@@ -60,6 +60,7 @@ export function ProfileEditor({ initial }: Props) {
   );
   const [amazonTag, setAmazonTag] = useState(initial.amazonAssociatesTag);
   const [amazonUseOwn, setAmazonUseOwn] = useState(initial.amazonUseOwnTag);
+  const [payoutEmail, setPayoutEmail] = useState(initial.payoutEmail);
 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -126,6 +127,8 @@ export function ProfileEditor({ initial }: Props) {
         bodyTypeSelfTags: bodyTags,
         amazonAssociatesTag: amazonTag,
         amazonUseOwnTag: amazonUseOwn,
+        payoutEmail,
+        payoutMethod: initial.payoutMethod,
       };
       const r = await updateProfileAction(draft);
       if (!r.ok) {
@@ -307,6 +310,52 @@ export function ProfileEditor({ initial }: Props) {
                 Using platform tag (
                 <span className="font-mono">styledinmotio-20</span>). Add
                 yours above to switch.
+              </>
+            )}
+          </p>
+        </div>
+      </section>
+
+      {/* Payments — PayPal email for payout. Lives next to Amazon attribution
+          so all money-related setup is in one place. iOS has the same section
+          on its consolidated Payments & Payouts screen. */}
+      <section id="payments" className="space-y-4 scroll-mt-20">
+        <SectionTitle>How you get paid</SectionTitle>
+        <p className="text-xs text-muted -mt-2">
+          We send confirmed commissions to PayPal once your balance hits $25.
+          Enter the email you use for PayPal — that&apos;s where the money
+          lands. Set it once and forget it.
+        </p>
+        <div
+          className={`rounded-2xl border p-4 space-y-3 ${
+            payoutEmail.trim()
+              ? "border-border bg-card"
+              : "border-rose/40 bg-rose/5"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <label className="w-28 text-sm text-muted">PayPal email</label>
+            <TextInput
+              value={payoutEmail}
+              onChange={(v) => setPayoutEmail(v.trim())}
+              placeholder="you@example.com"
+              className="flex-1"
+            />
+          </div>
+          <p className="text-xs text-muted">
+            {payoutEmail.trim() ? (
+              <>
+                <span className="text-rose font-medium">Active:</span> payouts
+                go to{" "}
+                <span className="font-mono">{payoutEmail.trim()}</span>.
+                Update any time — change applies to the next payout run.
+              </>
+            ) : (
+              <>
+                <span className="text-rose font-medium">No payout method
+                set.</span>{" "}
+                We hold your balance until you add a PayPal email here. You
+                won&apos;t lose any earnings — they just queue up.
               </>
             )}
           </p>

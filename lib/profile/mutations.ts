@@ -27,6 +27,10 @@ export interface ProfileDraft {
   bodyTypeSelfTags: string[];
   amazonAssociatesTag: string;
   amazonUseOwnTag: boolean;
+  /** PayPal email — confirmed commissions get paid out to this address. */
+  payoutEmail: string;
+  /** v1 only supports 'paypal'. Stripe Connect deferred. */
+  payoutMethod: "paypal" | "stripe" | "bank";
 }
 
 export interface SaveResult {
@@ -93,6 +97,16 @@ export async function updateProfileAction(
     };
   }
 
+  // PayPal email — light format check. Empty string is allowed (creator
+  // hasn't set one yet); only validate format if a value was entered.
+  const payoutEmail = draft.payoutEmail.trim().toLowerCase();
+  if (payoutEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payoutEmail)) {
+    return {
+      ok: false,
+      error: "PayPal email doesn't look right — double-check the format.",
+    };
+  }
+
   // Look up handles by platform for column writes
   const handle = (p: SocialPlatform) =>
     draft.socials.find((s) => s.platform === p)?.handle.trim() ?? "";
@@ -125,6 +139,8 @@ export async function updateProfileAction(
     body_type_self_tags: draft.bodyTypeSelfTags,
     amazon_associates_tag: amazonTag || null,
     amazon_use_own_tag: draft.amazonUseOwnTag && !!amazonTag,
+    payout_email: payoutEmail || null,
+    payout_method: draft.payoutMethod || "paypal",
     updated_at: new Date().toISOString(),
   };
 
