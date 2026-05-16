@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { isAdmin } from "@/lib/admin/auth";
 import { IngestForm } from "./IngestForm";
+import { AmazonApiSync } from "./AmazonApiSync";
 
 export const metadata = { title: "Ingest Amazon report" };
 
@@ -40,7 +41,19 @@ export default async function IngestAmazonPage() {
 
       <div className="mt-10 editorial-divider" />
 
+      {/* New: Creators API auto-sync — preferred path once Amazon starts
+          generating reports for us. The CSV uploader below stays as the
+          fallback for historical reports + manual ops. */}
       <div className="mt-8">
+        <AmazonApiSync />
+      </div>
+
+      <div className="mt-10 editorial-divider" />
+
+      <div className="mt-8">
+        <p className="text-xs uppercase tracking-widest text-muted mb-2">
+          Manual fallback
+        </p>
         <IngestForm />
       </div>
     </div>
