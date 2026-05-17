@@ -10,9 +10,11 @@ import {
   type AddItemDraft,
 } from "@/lib/closet/mutations";
 import { CampaignMatchBanner } from "@/components/closet/CampaignMatchBanner";
+import { AwinMatchBanner } from "@/components/closet/AwinMatchBanner";
 import { createClient } from "@/lib/supabase/client";
 import { extractAsin } from "@/lib/closet/asin";
 import type { Campaign } from "@/types/campaigns";
+import type { AwinMerchant } from "@/types/awin";
 
 type Mode = "single" | "bulk";
 
@@ -162,6 +164,25 @@ function SingleUrlForm({
     [url],
   );
 
+  // Awin-wrapped URL swap. Same shape as the campaign swap, but the
+  // banner returns a fully-built awin1.com/cread.php URL with clickref
+  // already stamped to the creator's UUID. Backend /api/shop will
+  // recognize it on click and 302 with attribution.
+  const handleAwinMatch = useCallback(
+    (wrappedUrl: string, merchant: AwinMerchant) => {
+      const trimmed = url.trim();
+      if (!trimmed) return;
+      // Don't re-swap a URL we already wrapped.
+      if (/(^|\.)awin1\.com\//i.test(trimmed)) return;
+      if (wrappedUrl === trimmed) return;
+      setUrl(wrappedUrl);
+      setSwapNotice(
+        `${merchant.merchantName} is on Awin — wrapped your link so this click earns commission.`,
+      );
+    },
+    [url],
+  );
+
   // Some URL params are critical for affiliate attribution and MUST be
   // preserved through the scrape step. The scraper's canonical_url strips
   // everything; we override with the user's pasted URL when these signals
@@ -261,6 +282,7 @@ function SingleUrlForm({
       </div>
 
       <CampaignMatchBanner url={url} onMatch={handleCampaignMatch} />
+      <AwinMatchBanner url={url} onMatch={handleAwinMatch} />
 
       {swapNotice ? (
         <div

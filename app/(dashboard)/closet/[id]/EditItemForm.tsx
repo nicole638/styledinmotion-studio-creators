@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useCallback, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   RefreshCw,
@@ -19,8 +19,10 @@ import {
 } from "@/lib/closet/mutations";
 import type { ClosetItem } from "@/types/closet";
 import { PhotoFrameEditor } from "@/components/closet/PhotoFrameEditor";
+import { AwinMatchBanner } from "@/components/closet/AwinMatchBanner";
 import { renderCroppedPhoto } from "@/lib/closet/photo-edit";
 import { createClient } from "@/lib/supabase/client";
+import type { AwinMerchant } from "@/types/awin";
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 const ACCEPTED_MIME = ["image/png", "image/jpeg", "image/webp"];
@@ -174,6 +176,24 @@ export function EditItemForm({
       setApplyingCrop(false);
     }
   };
+
+  // If the creator pastes a brand URL that matches an active Awin merchant,
+  // auto-swap the URL field to the wrapped Awin tracked URL (clickref =
+  // their UUID). Same shape as the Add flow's handler. Skipped if the URL
+  // is already on awin1.com so we don't double-wrap on edit-save loops.
+  const handleAwinMatch = useCallback(
+    (wrappedUrl: string, merchant: AwinMerchant) => {
+      const trimmed = url.trim();
+      if (!trimmed) return;
+      if (/(^|\.)awin1\.com\//i.test(trimmed)) return;
+      if (wrappedUrl === trimmed) return;
+      setUrl(wrappedUrl);
+      setNotice(
+        `${merchant.merchantName} is on Awin — wrapped your link so this click earns commission.`,
+      );
+    },
+    [url],
+  );
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -397,6 +417,8 @@ export function EditItemForm({
           className="w-full rounded-2xl border border-border bg-card px-4 py-2.5 text-sm outline-none focus:border-rose"
         />
       </FieldRow>
+
+      <AwinMatchBanner url={url} onMatch={handleAwinMatch} />
 
       {error ? (
         <div className="text-sm text-[#B53D2A] bg-[#FBE9E5] border border-[#F4C7BF] rounded-2xl px-4 py-3">
