@@ -49,6 +49,9 @@ export default async function NewClosetItemPage({ searchParams }: PageProps) {
         defaultWornSize: "",
         photoUrl: product?.imageUrl ?? "",
         originalPhotoUrl: product?.imageUrl ?? "",
+        // Cache-resolved draft only knows the single image. Picker won't
+        // render — that's fine; this is the fast-path tile shortcut.
+        candidateImageUrls: [],
       };
       usedCampaignShortcut = true;
       campaignBrandName = campaign.brandName;
@@ -72,6 +75,8 @@ export default async function NewClosetItemPage({ searchParams }: PageProps) {
           defaultWornSize: "",
           photoUrl: product.imageUrl ?? "",
           originalPhotoUrl: product.imageUrl ?? "",
+          // ASIN cache holds only the primary image. Picker won't render.
+          candidateImageUrls: [],
         };
       }
     }

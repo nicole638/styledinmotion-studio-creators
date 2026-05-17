@@ -12,6 +12,13 @@ export interface ScrapedProduct {
   brand: string | null;
   price: string | null;
   imageUrl: string | null;
+  /**
+   * Up to 6 candidate image URLs from the scrape pipeline, in merchant
+   * priority order. First element is the same as imageUrl. Empty when
+   * the backend only returned one usable image (legacy + most cases).
+   * The Add Item picker renders only when length > 1.
+   */
+  imageUrls: string[];
   originalImageUrl: string | null;
   description: string | null;
   canonicalUrl: string | null;
@@ -64,11 +71,22 @@ export async function fetchProductInfo(url: string): Promise<ScrapedProduct> {
     throw new ScrapeError("Bad response", res.status, "non-JSON body");
   }
 
+  // Backend may not yet ship imageUrls (older /api/product-info build).
+  // Fall back to [imageUrl] so downstream code can always rely on the array.
+  const imageUrls: string[] = Array.isArray(data.imageUrls)
+    ? (data.imageUrls as unknown[]).filter(
+        (u): u is string => typeof u === "string" && u.length > 0,
+      )
+    : data.imageUrl
+      ? [data.imageUrl]
+      : [];
+
   return {
     name: data.name ?? null,
     brand: data.brand ?? data.siteName ?? null,
     price: data.price ?? null,
-    imageUrl: data.imageUrl ?? null,
+    imageUrl: data.imageUrl ?? imageUrls[0] ?? null,
+    imageUrls,
     originalImageUrl: data.originalImageUrl ?? null,
     description: data.description ?? null,
     canonicalUrl: data.canonicalUrl ?? null,

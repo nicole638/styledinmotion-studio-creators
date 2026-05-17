@@ -36,6 +36,13 @@ export interface ClosetItem {
   url: string | null;
   affiliateUrl: string | null;
   photoUrl: string | null; // resolved (cutout > photo > original)
+  /**
+   * Up to 6 candidate image URLs from the scrape pipeline, in merchant
+   * priority order. Surfaces in the Edit form as a picker so creators
+   * can swap to a different image without re-fetching. Empty array =
+   * only one usable image, picker doesn't render.
+   */
+  candidatePhotoUrls: string[];
   archived: boolean;
   defaultWornSize: string | null;
   createdAt: string;
@@ -55,6 +62,7 @@ export interface ClosetItemRow {
   photo_url: string | null;
   cutout_photo_url: string | null;
   original_photo_url: string | null;
+  candidate_photo_urls: string[] | null;
   archived: boolean;
   default_worn_size: string | null;
   created_at: string;
@@ -73,6 +81,7 @@ export function rowToClosetItem(row: ClosetItemRow): ClosetItem {
     affiliateUrl: row.affiliate_url,
     photoUrl:
       row.cutout_photo_url || row.photo_url || row.original_photo_url || null,
+    candidatePhotoUrls: row.candidate_photo_urls ?? [],
     archived: row.archived,
     defaultWornSize: row.default_worn_size,
     createdAt: row.created_at,

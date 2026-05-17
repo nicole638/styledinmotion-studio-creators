@@ -14,6 +14,14 @@ export interface AddItemDraft {
   defaultWornSize: string;
   photoUrl: string;
   originalPhotoUrl: string;
+  /**
+   * Up to 6 image candidates the scraper returned, in merchant priority
+   * order. The PhotoCandidatePicker on Add lets the creator switch which
+   * one becomes photoUrl. Empty array means the scrape only found one
+   * usable image — no picker renders. Persisted to creator_items
+   * .candidate_photo_urls so Edit can render the same picker later.
+   */
+  candidateImageUrls: string[];
 }
 
 export interface SaveResult {
@@ -194,6 +202,11 @@ export async function addClosetItemAction(
     url: draft.url.trim() || null,
     photo_url: photoTrimmed || null,
     original_photo_url: originalTrimmed || null,
+    // Persist candidates so the Edit form's picker can offer them later.
+    // Empty array is fine — picker just doesn't render.
+    candidate_photo_urls: (draft.candidateImageUrls ?? []).filter(
+      (u) => typeof u === "string" && u.trim().length > 0,
+    ),
     default_worn_size: draft.defaultWornSize.trim() || null,
     archived: false,
     // Mark complete so the trigger doesn't re-fire and the closet card
@@ -291,6 +304,7 @@ export async function scrapeUrlAction(url: string): Promise<ScrapeActionResult> 
         photoUrl: product.imageUrl ?? "",
         originalPhotoUrl:
           product.originalImageUrl ?? product.imageUrl ?? "",
+        candidateImageUrls: product.imageUrls ?? [],
       },
     };
   } catch (e: any) {
@@ -367,6 +381,9 @@ export async function bulkAddClosetItemsAction(
     url: d.url.trim() || null,
     photo_url: d.photoUrl.trim() || null,
     original_photo_url: d.originalPhotoUrl.trim() || null,
+    candidate_photo_urls: (d.candidateImageUrls ?? []).filter(
+      (u) => typeof u === "string" && u.trim().length > 0,
+    ),
     default_worn_size: d.defaultWornSize.trim() || null,
     archived: false,
   }));

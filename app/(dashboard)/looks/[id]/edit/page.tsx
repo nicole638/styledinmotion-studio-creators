@@ -19,7 +19,7 @@ const LOOK_COLUMNS =
   "id, title, caption, cover_photo_url, short_code, archived, published_at, clicks, created_at, updated_at, collage_layout";
 
 const CUTOUT_ITEM_COLUMNS =
-  "id, name, brand, category, price, url, affiliate_url, photo_url, cutout_photo_url, original_photo_url, archived, default_worn_size, created_at";
+  "id, name, brand, category, price, url, affiliate_url, photo_url, cutout_photo_url, original_photo_url, candidate_photo_urls, archived, default_worn_size, created_at";
 
 export default async function EditLookPage({
   params,

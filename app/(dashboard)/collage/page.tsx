@@ -10,7 +10,7 @@ import { CollageEditor } from "@/components/collage/CollageEditor";
 export const metadata = { title: "Collage builder" };
 
 const ITEM_COLUMNS =
-  "id, name, brand, category, price, url, affiliate_url, photo_url, cutout_photo_url, original_photo_url, archived, default_worn_size, created_at";
+  "id, name, brand, category, price, url, affiliate_url, photo_url, cutout_photo_url, original_photo_url, candidate_photo_urls, archived, default_worn_size, created_at";
 
 export default async function CollagePage() {
   const supabase = createClient();

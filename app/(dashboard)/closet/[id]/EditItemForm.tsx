@@ -20,6 +20,7 @@ import {
 import type { ClosetItem } from "@/types/closet";
 import { PhotoFrameEditor } from "@/components/closet/PhotoFrameEditor";
 import { AwinMatchBanner } from "@/components/closet/AwinMatchBanner";
+import { PhotoCandidatePicker } from "@/components/closet/PhotoCandidatePicker";
 import { renderCroppedPhoto } from "@/lib/closet/photo-edit";
 import { createClient } from "@/lib/supabase/client";
 import type { AwinMerchant } from "@/types/awin";
@@ -346,6 +347,24 @@ export function EditItemForm({
           </div>
         </div>
       )}
+
+      {/* Multi-image picker. Hidden when there's 0 or 1 candidate. Tap a
+          thumbnail to swap photoUrl — the change saves on the next Save
+          click, same as any other field. */}
+      <PhotoCandidatePicker
+        candidates={item.candidatePhotoUrls}
+        selectedUrl={photoUrl}
+        onSelect={async (url) => {
+          setPhotoUrl(url);
+          // Persist immediately. The Edit form's main Save covers other
+          // fields, but the picker is a single-tap UX — saving in the
+          // background keeps the visual swap in sync with the DB. RLS
+          // + .eq("creator_id", user.id) inside applyEditedPhotoAction
+          // protects us.
+          await applyEditedPhotoAction(item.id, url);
+          router.refresh();
+        }}
+      />
 
       <FieldRow label="Name">
         <input

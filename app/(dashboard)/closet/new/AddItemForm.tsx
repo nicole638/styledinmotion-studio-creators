@@ -11,6 +11,7 @@ import {
 } from "@/lib/closet/mutations";
 import { CampaignMatchBanner } from "@/components/closet/CampaignMatchBanner";
 import { AwinMatchBanner } from "@/components/closet/AwinMatchBanner";
+import { PhotoCandidatePicker } from "@/components/closet/PhotoCandidatePicker";
 import { createClient } from "@/lib/supabase/client";
 import { extractAsin } from "@/lib/closet/asin";
 import type { Campaign } from "@/types/campaigns";
@@ -42,6 +43,7 @@ const EMPTY_DRAFT: AddItemDraft = {
   defaultWornSize: "",
   photoUrl: "",
   originalPhotoUrl: "",
+  candidateImageUrls: [],
 };
 
 /**
@@ -401,6 +403,20 @@ function ReviewForm({
             photoUrl: url,
             // Keep originalPhotoUrl pointing at the merchant's source so
             // a later "Re-fetch" on Edit can restore it.
+            originalPhotoUrl: draft.originalPhotoUrl || url,
+          })
+        }
+      />
+
+      {/* Scrape returned multiple candidate images — let the creator
+          pick the right one. Picker hides itself when there's 0 or 1. */}
+      <PhotoCandidatePicker
+        candidates={draft.candidateImageUrls}
+        selectedUrl={draft.photoUrl}
+        onSelect={(url) =>
+          onChange({
+            ...draft,
+            photoUrl: url,
             originalPhotoUrl: draft.originalPhotoUrl || url,
           })
         }
