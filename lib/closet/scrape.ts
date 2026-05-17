@@ -64,12 +64,24 @@ export async function fetchProductInfo(url: string): Promise<ScrapedProduct> {
     );
   }
 
-  let data: any;
+  let body: any;
   try {
-    data = await res.json();
+    body = await res.json();
   } catch {
     throw new ScrapeError("Bad response", res.status, "non-JSON body");
   }
+
+  // The Vibecode backend wraps its product payload in { data: {...} } —
+  // every field we want sits one level deeper. Older builds (and some
+  // self-hosted overrides via NEXT_PUBLIC_BACKEND_URL) ship the payload
+  // at the root. Accept both shapes so swapping backends doesn't break.
+  //
+  // Before this fix: every scrape returned ok:false "Scraper returned
+  // 200 but no product details" because `body.name` was always undefined.
+  const data: any =
+    body && typeof body === "object" && body.data && typeof body.data === "object"
+      ? body.data
+      : body;
 
   // Backend may not yet ship imageUrls (older /api/product-info build).
   // Fall back to [imageUrl] so downstream code can always rely on the array.
