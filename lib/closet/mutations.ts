@@ -225,16 +225,23 @@ export async function addClosetItemAction(
     return { ok: false, error: error.message };
   }
 
-  // Fire-and-forget Photoroom cutout. The EF reads the saved photo_url,
-  // calls Photoroom remove_bg, uploads to item-photos/cutouts/..., and
-  // UPDATEs photo_url + cutout_photo_url. Realtime on creator_items
-  // updates the closet card automatically when it lands.
+  // Fire-and-forget Photoroom cutout for every new item with a photo.
+  // The EF reads the saved photo_url, calls Photoroom remove_bg, uploads
+  // to item-photos/cutouts/..., and UPDATEs cutout_photo_url. Realtime
+  // on creator_items updates the closet card automatically when it lands.
   //
-  // We only kick this off when the source is an Amazon CDN URL (i.e.
-  // came from the campaign auto-fill flow or a pasted Amazon product
-  // photo). Other merchant CDNs are skipped for now — their photos
-  // already vary in quality and the cutout success rate is lower.
-  if (photoTrimmed && /m\.media-amazon\.com\/images\/I\//.test(photoTrimmed)) {
+  // Cutout is what gates item visibility in /collage (the collage editor
+  // filters cutout_photo_url IS NOT NULL), so without this step every
+  // non-Amazon item — every Awin merchant, every Shopify store, every
+  // direct-paste from a brand site — is invisible to collage.
+  //
+  // Photoroom's success rate varies by image source: Shopify CDN photos
+  // (clean flat-lays) cut out great; hot-link-protected CDNs (Aritzia
+  // Cloudinary, etc.) fail because Photoroom can't fetch them. Failed
+  // cutouts leave the row's cutout_photo_url NULL — the item still
+  // displays via photo_url, it just isn't selectable in collage. No
+  // hard regression for those edge cases.
+  if (photoTrimmed) {
     void triggerItemCutout(data.id);
   }
 
@@ -538,11 +545,22 @@ export async function applyEditedPhotoAction(
 
   const { error } = await supabase
     .from("creator_items")
-    .update({ photo_url: newPhotoUrl })
+    .update({
+      photo_url: newPhotoUrl,
+      // Invalidate the existing cutout — it was based on the previous
+      // photo. The fresh triggerItemCutout below will regenerate it
+      // from the new photo_url.
+      cutout_photo_url: null,
+    })
     .eq("id", itemId)
     .eq("creator_id", user.id);
 
   if (error) return { ok: false, error: error.message };
+
+  // Re-cutout against the new photo. Same fire-and-forget pattern as
+  // addClosetItemAction — Realtime will refresh the closet card when
+  // Photoroom finishes (~5-10s).
+  void triggerItemCutout(itemId);
 
   revalidatePath("/closet");
   revalidatePath(`/closet/${itemId}`);
