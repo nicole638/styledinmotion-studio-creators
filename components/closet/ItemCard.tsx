@@ -51,12 +51,18 @@ export function ItemCard({ item, isConsigning, onConsignTap }: Props) {
       <Link href={`/closet/${item.id}`} className="block">
         <div className="relative aspect-[4/5] bg-bg">
           {photo ? (
+            // object-contain so tall product photos (dresses, full-body
+            // shots) aren't clipped at the hem/neckline. The aspect-[4/5]
+            // container gives a consistent grid; bg-bg fills any letterbox
+            // space. Cutouts (transparent PNGs) look great with this; raw
+            // merchant photos lose a sliver of dead space but keep the
+            // whole garment visible — that's the trade we want.
             <Image
               src={photo}
               alt={display}
               fill
               sizes="(max-width: 768px) 50vw, (max-width: 1280px) 25vw, 20vw"
-              className="object-cover group-hover:scale-[1.02] transition-transform duration-300"
+              className="object-contain p-2 group-hover:scale-[1.02] transition-transform duration-300"
               unoptimized
             />
           ) : (

@@ -612,11 +612,13 @@ function PhotoField({
         }}
       />
       {photoUrl ? (
+        // object-contain — tall garments (dresses, full-body shots) stay
+        // fully visible instead of getting clipped to fill the box.
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={photoUrl}
           alt="Product"
-          className="w-24 h-32 object-cover rounded-xl bg-bg shrink-0 border border-border"
+          className="w-24 h-32 object-contain p-1 rounded-xl bg-bg shrink-0 border border-border"
         />
       ) : (
         <div className="w-24 h-32 rounded-xl border border-dashed border-border bg-bg grid place-items-center shrink-0">

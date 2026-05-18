@@ -74,11 +74,16 @@ export function PhotoCandidatePicker({
               aria-pressed={isSelected}
               aria-label={isSelected ? "Selected photo" : "Use this photo"}
             >
+              {/* object-contain — picker thumbs show different shot types
+                  for the same product (flat-lay / on-model / detail).
+                  Cropping with cover hides the very signal that helps the
+                  creator pick the right one (e.g. on-model shot of a dress
+                  gets clipped to head+torso). p-1 gives a subtle inset. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={url}
                 alt=""
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain p-1"
                 loading="lazy"
                 onError={(e) => {
                   // Hide broken candidates so a 404 thumb doesn't camp in

@@ -120,11 +120,13 @@ export function ItemPicker({ closet, selected, onChange }: Props) {
                   </div>
                   <div className="w-12 h-14 rounded-md bg-bg overflow-hidden shrink-0">
                     {item.photoUrl ? (
+                      // object-contain keeps tall garments (dresses) fully
+                      // visible in the small selected-items strip.
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={item.photoUrl}
                         alt={item.name ?? "Piece"}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain p-0.5"
                       />
                     ) : null}
                   </div>
@@ -217,11 +219,13 @@ export function ItemPicker({ closet, selected, onChange }: Props) {
                   >
                     <div className="relative aspect-[4/5] bg-bg">
                       {item.photoUrl ? (
+                        // object-contain — full garment stays visible in
+                        // the picker grid, matching the closet card style.
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={item.photoUrl}
                           alt={item.name ?? "Piece"}
-                          className="absolute inset-0 w-full h-full object-cover"
+                          className="absolute inset-0 w-full h-full object-contain p-2"
                         />
                       ) : null}
                     </div>

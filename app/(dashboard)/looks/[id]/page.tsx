@@ -148,10 +148,12 @@ export default async function LookDetailPage({
               <div className="aspect-[4/5] bg-bg relative">
                 {closetItem?.photoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
+                  // object-contain — full garment stays visible in the
+                  // shoppable look detail page.
                   <img
                     src={closetItem.photoUrl}
                     alt={closetItem.name ?? "Piece"}
-                    className="absolute inset-0 w-full h-full object-cover"
+                    className="absolute inset-0 w-full h-full object-contain p-2"
                   />
                 ) : (
                   <div className="absolute inset-0 grid place-items-center text-xs uppercase tracking-widest text-muted">

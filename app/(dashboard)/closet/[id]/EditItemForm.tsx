@@ -271,11 +271,14 @@ export function EditItemForm({
       ) : (
         <div className="bg-card border border-border rounded-2xl p-4 flex gap-4">
           {photoUrl ? (
+            // object-contain so dresses / full-body photos don't get
+            // clipped at top + bottom. Inner padding gives the image a
+            // subtle frame inside the bg-bg fill.
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={photoUrl}
               alt={name || "Product"}
-              className="w-32 h-40 object-cover rounded-xl bg-bg"
+              className="w-32 h-40 object-contain p-1.5 rounded-xl bg-bg"
             />
           ) : (
             <div className="w-32 h-40 rounded-xl bg-bg grid place-items-center text-xs text-muted">
