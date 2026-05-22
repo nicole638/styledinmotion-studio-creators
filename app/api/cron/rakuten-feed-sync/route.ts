@@ -47,6 +47,26 @@ const SUPABASE_URL = "https://rghlcnrttvlvphzahudf.supabase.co";
 const CHUNK_SIZE = 1500;       // smaller chunks → smoother concurrency
 const UPSERT_CONCURRENCY = 6;  // 6 chunks in flight at once → ~6x throughput vs serial POST
 
+// Category filtering — values are matched case-insensitively against col[3] (Primary Category)
+// of the first data row. Files whose primary category falls into SKIP_CATEGORIES are
+// downloaded only to peek at the category, then aborted. Saves upsert time for irrelevant
+// inventory like home goods.
+const SKIP_CATEGORIES = new Set([
+  "home", "home & garden", "home and garden", "kids", "kid", "baby", "babies",
+  "furniture", "kitchen", "bedding", "bath", "garden", "outdoor",
+]);
+
+// Priority categories — we process these FIRST (in this order). Files not matching
+// any priority category but not in SKIP_CATEGORIES still get processed, just after the
+// priority ones.
+const PRIORITY_CATEGORIES = [
+  "clothing", "women", "apparel", "dress", "dresses",
+  "handbag", "handbags", "bag", "bags",
+  "shoe", "shoes", "boots", "sneakers",
+  "beauty", "beauty & cosmetics", "cosmetics", "fragrance", "makeup",
+  "accessories", "jewelry",
+];
+
 // Use a single Supabase client across the whole invocation.
 // Typed loosely — generic inference between createClient call sites is brittle in TS 5.4.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -188,13 +208,29 @@ export async function GET(req: NextRequest) {
       tombstoned[r.mid] = count ?? 0;
     }
 
-    return NextResponse.json({
+    const payload = {
       ok: results.every((r) => r.ok),
       sync_start: syncStart.toISOString(),
       sync_end: new Date().toISOString(),
       results,
       tombstoned,
-    });
+    };
+    // Persist full run record so we can inspect it later without keeping the HTTP
+    // connection open. Curl times out after 42s but Vercel keeps running — we want
+    // to capture what happened across the full execution window.
+    try {
+      await supa.from("rakuten_sync_runs").insert({
+        started_at: syncStart.toISOString(),
+        finished_at: payload.sync_end,
+        ok: payload.ok,
+        mid_filter: midFilter,
+        files_cap: filesCap,
+        result: payload,
+      });
+    } catch (e) {
+      log("sync_runs insert failed:", (e as Error).message);
+    }
+    return NextResponse.json(payload);
   } catch (e) {
     log("✗ Fatal:", (e as Error).message);
     return NextResponse.json(
@@ -279,14 +315,39 @@ async function processMid(
     const remotePath = `/${mid}/${actualFilename}`;
     const localPath = path.join(tmpDir, actualFilename);
 
-    // Download
-    try {
-      await ftp.downloadTo(localPath, remotePath);
-    } catch (e) {
-      log(`    ✗ ${actualFilename}: download_failed — ${(e as Error).message}`);
-      filesSkipped.push(`${actualFilename}: ${(e as Error).message}`);
-      continue;
+    // Download. If FTP dropped us between files, reconnect once and retry.
+    let downloadOk = false;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await ftp.downloadTo(localPath, remotePath);
+        downloadOk = true;
+        break;
+      } catch (e) {
+        const msg = (e as Error).message;
+        log(`    ! ${actualFilename}: download attempt ${attempt} failed — ${msg}`);
+        if (attempt === 1) {
+          // Try to recover by reconnecting (Rakuten often kicks long-lived sessions)
+          try { ftp.close(); } catch { /* */ }
+          try {
+            await ftp.access({
+              host: RAKUTEN_FTP_HOST,
+              user: process.env.RAKUTEN_FTP_USER!,
+              password: process.env.RAKUTEN_FTP_PASS!,
+              secure: false,
+              port: 21,
+            });
+            log(`    ↻ Reconnected FTP for ${actualFilename}`);
+          } catch (re) {
+            log(`    ✗ FTP reconnect failed: ${(re as Error).message}`);
+            filesSkipped.push(`${actualFilename}: ${msg} (reconnect_failed: ${(re as Error).message})`);
+            break;
+          }
+        } else {
+          filesSkipped.push(`${actualFilename}: ${msg}`);
+        }
+      }
     }
+    if (!downloadOk) continue;
 
     // Stream-parse + chunk + POST
     const rl = createInterface({
@@ -296,6 +357,8 @@ async function processMid(
 
     let separator = "|";
     let hdrRecord: string[] | null = null;
+    let fileCategory: string | null = null;
+    let categorySkipped = false;
     const buffer: Record<string, unknown>[] = [];
     const inflight: Promise<unknown>[] = [];
     let fileSent = 0;
@@ -303,6 +366,7 @@ async function processMid(
 
     for await (const line of rl) {
       if (!line.trim()) continue;
+      if (categorySkipped) break;  // bail out fast once we know category is filtered
 
       // Rakuten cmp/mp files use HDR record at start + TRL record at end.
       // Both must be skipped — data rows are between them, positional, no column header row.
@@ -328,6 +392,18 @@ async function processMid(
       // Data row
       fileSeen++;
       const values = line.split(separator);
+
+      // First data row → check category; if filtered, abort this file
+      if (!fileCategory) {
+        fileCategory = (values[3] ?? "").trim().toLowerCase();
+        if (SKIP_CATEGORIES.has(fileCategory)) {
+          log(`    ↷ ${actualFilename}: category "${fileCategory}" in skip list — aborting`);
+          filesSkipped.push(`${actualFilename}: category_filtered=${fileCategory}`);
+          categorySkipped = true;
+          continue;
+        }
+        log(`    ▸ ${actualFilename}: category "${fileCategory}" — processing`);
+      }
 
       // Snapshot first 3 data rows so we can see column positions
       if (diag && (diag.sample_row_count ?? 0) < 1) {
@@ -364,18 +440,24 @@ async function processMid(
         }
       }
     }
-    // Drain remaining
-    if (buffer.length > 0) {
-      inflight.push(upsertChunk(supa, merchantId, buffer.splice(0)).then((n) => { fileSent += n; }));
+    // Drain remaining (skip if we bailed on category filter)
+    if (!categorySkipped) {
+      if (buffer.length > 0) {
+        inflight.push(upsertChunk(supa, merchantId, buffer.splice(0)).then((n) => { fileSent += n; }));
+      }
+      await Promise.all(inflight.splice(0));
     }
-    await Promise.all(inflight.splice(0));
 
     try { await unlink(localPath); } catch { /* */ }
 
-    log(`    ✓ ${actualFilename}: ${fileSent.toLocaleString()} upserted (${fileSeen.toLocaleString()} rows)`);
-    totalSent += fileSent;
-    totalSeen += fileSeen;
-    filesProcessed++;
+    if (categorySkipped) {
+      // already counted in filesSkipped
+    } else {
+      log(`    ✓ ${actualFilename}: ${fileSent.toLocaleString()} upserted (${fileSeen.toLocaleString()} rows, cat=${fileCategory})`);
+      totalSent += fileSent;
+      totalSeen += fileSeen;
+      filesProcessed++;
+    }
   }
 
   log(`  ✓ MID ${mid}: ${totalSent.toLocaleString()} total products across ${filesProcessed} file(s)`);
