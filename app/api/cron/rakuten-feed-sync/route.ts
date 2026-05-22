@@ -56,8 +56,9 @@ interface SyncResult {
   diag?: {
     first_file?: string;
     separator?: string;
-    headers?: string[];
-    sample_row?: Record<string, string>;
+    hdr_record?: string[];
+    sample_data_row?: { col_index: number; value: string }[];
+    sample_row_count?: number;
     pid_hit_rate?: { with_pid: number; without_pid: number };
   };
 }
@@ -268,40 +269,56 @@ async function processMid(
       crlfDelay: Infinity,
     });
 
-    let headers: string[] | null = null;
     let separator = "|";
+    let hdrRecord: string[] | null = null;
     const buffer: Record<string, unknown>[] = [];
     let fileSent = 0;
     let fileSeen = 0;
+    let sampleCount = 0;
 
     for await (const line of rl) {
-      if (!line.trim() || line.startsWith("Trailer Record")) continue;
-      if (!headers) {
-        separator = detectSeparator(line);
-        headers = line.split(separator).map((h) => h.trim().toLowerCase());
-        // Capture diag from the very first file we process
+      if (!line.trim()) continue;
+
+      // Rakuten cmp/mp files use HDR record at start + TRL record at end.
+      // Both must be skipped — data rows are between them, positional, no column header row.
+      const upper = line.slice(0, 4).toUpperCase();
+      if (upper.startsWith("HDR")) {
+        const sep = detectSeparator(line);
+        const parts = line.split(sep);
+        if (!hdrRecord) hdrRecord = parts;
         if (!diag) {
+          separator = sep;
           diag = {
             first_file: actualFilename,
-            separator: separator === "\t" ? "TAB" : separator,
-            headers: headers.slice(0, 60),  // cap to keep response small
+            separator: sep === "\t" ? "TAB" : sep,
+            hdr_record: parts.slice(0, 10),
           };
         }
         continue;
       }
+      if (upper.startsWith("TRL") || line.startsWith("Trailer Record")) {
+        continue;
+      }
+
+      // Data row
       fileSeen++;
       const values = line.split(separator);
-      const product = mapRow(headers, values);
+
+      // Snapshot first 3 data rows so we can see column positions
+      if (diag && (diag.sample_row_count ?? 0) < 1) {
+        const sample = values.slice(0, 50).map((v, i) => ({
+          col_index: i,
+          value: (v ?? "").slice(0, 120),
+        }));
+        diag.sample_data_row = sample;
+        diag.sample_row_count = (diag.sample_row_count ?? 0) + 1;
+      } else if (diag) {
+        diag.sample_row_count = (diag.sample_row_count ?? 0) + 1;
+      }
+
+      const product = mapRowPositional(values);
       if (!product) {
         pidMisses++;
-        // Snapshot the first unmapped row for diag
-        if (diag && !diag.sample_row && pidMisses === 1) {
-          const sample: Record<string, string> = {};
-          for (let i = 0; i < Math.min(headers.length, 25); i++) {
-            sample[headers[i]] = (values[i] ?? "").slice(0, 80);
-          }
-          diag.sample_row = sample;
-        }
         continue;
       }
       pidHits++;
@@ -344,6 +361,12 @@ function toNumber(v: string | undefined): number | null {
   if (!v) return null;
   const m = String(v).match(/(\d+(?:\.\d+)?)/);
   return m ? parseFloat(m[1]) : null;
+}
+
+// Positional parser for Rakuten cmp/mp files — schema TBD from diag output.
+// Returns null until we know the actual column layout.
+function mapRowPositional(_values: string[]): Record<string, unknown> | null {
+  return null;
 }
 
 function mapRow(
