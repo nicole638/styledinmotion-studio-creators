@@ -1,11 +1,14 @@
 // Daily Rakuten product-feed sync — runs as a Vercel cron at 06:00 UTC.
 //
 // Connects to aftp.linksynergy.com over PLAIN FTP (port 21 — Rakuten's server
-// doesn't support TLS), walks each MID folder under root, pulls the full
-// catalog file (<MID>_<SID>_mp.txt.gz), parses pipe-delimited rows, and POSTs
-// products in 3K-row chunks to the rakuten-import-products-once Supabase
-// Edge Function. After all merchants are processed, marks any product not
-// seen in this run as removed_at = now() (tombstone pass).
+// doesn't support TLS), walks each MID folder under root, finds the merchant's
+// snapshot files (<MID>_<SID>_<CATEGORY>_cmp.txt.gz for category-segmented
+// merchants like Bloomingdale's, or <MID>_<SID>_mp.txt.gz for single-catalog
+// merchants), parses pipe-delimited positional rows, and upserts products
+// directly into rakuten_products via the Supabase service-role client.
+// Chunks of 1.5K rows are submitted with up to 6 concurrent upserts in flight
+// for ~6x throughput vs serial. After all merchants are processed, marks any
+// product not seen in this run as removed_at = now() (tombstone pass).
 //
 // Vercel cron auth: requires CRON_SECRET env var; Vercel sends the request
 // with `Authorization: Bearer <CRON_SECRET>`. We reject other callers.
@@ -41,7 +44,11 @@ const RAKUTEN_FTP_HOST = "aftp.linksynergy.com";
 const RAKUTEN_FTP_SID = "4705911";
 const SUPABASE_URL = "https://rghlcnrttvlvphzahudf.supabase.co";
 
-const CHUNK_SIZE = 3000;
+const CHUNK_SIZE = 1500;       // smaller chunks → smoother concurrency
+const UPSERT_CONCURRENCY = 6;  // 6 chunks in flight at once → ~6x throughput vs serial POST
+
+// Use a single Supabase client across the whole invocation
+type Supa = ReturnType<typeof createClient>;
 
 interface SyncResult {
   mid: string;
@@ -152,7 +159,7 @@ export async function GET(req: NextRequest) {
     const results: SyncResult[] = [];
     for (const mid of midFolders) {
       try {
-        const r = await processMid(ftp, mid, serviceKey, filesCap);
+        const r = await processMid(ftp, mid, supa, filesCap);
         results.push(r);
       } catch (e) {
         log(`  ✗ MID ${mid} unrecoverable:`, (e as Error).message);
@@ -206,9 +213,19 @@ export async function GET(req: NextRequest) {
 async function processMid(
   ftp: FtpClient,
   mid: string,
-  serviceKey: string,
+  supa: Supa,
   filesCap: number | null = null,
 ): Promise<SyncResult> {
+  // Pre-fetch merchant UUID (one DB roundtrip per merchant, not per chunk)
+  const { data: merchant } = await supa
+    .from("rakuten_merchants")
+    .select("id")
+    .eq("rakuten_mid", mid)
+    .maybeSingle();
+  if (!merchant) {
+    return { mid, ok: false, error: "merchant_not_in_db" };
+  }
+  const merchantId = merchant.id as string;
   const tmpDir = path.join(os.tmpdir(), "rakuten-feed-sync");
   await mkdir(tmpDir, { recursive: true });
 
@@ -278,9 +295,9 @@ async function processMid(
     let separator = "|";
     let hdrRecord: string[] | null = null;
     const buffer: Record<string, unknown>[] = [];
+    const inflight: Promise<unknown>[] = [];
     let fileSent = 0;
     let fileSeen = 0;
-    let sampleCount = 0;
 
     for await (const line of rl) {
       if (!line.trim()) continue;
@@ -331,12 +348,25 @@ async function processMid(
       buffer.push(product);
 
       if (buffer.length >= CHUNK_SIZE) {
-        fileSent += await postChunk(mid, buffer.splice(0), actualFilename, serviceKey);
+        const chunk = buffer.splice(0);
+        inflight.push(upsertChunk(supa, merchantId, chunk).then((n) => { fileSent += n; }));
+        // Drain when we hit concurrency ceiling
+        if (inflight.length >= UPSERT_CONCURRENCY) {
+          await Promise.race(inflight);
+          // Remove settled
+          for (let i = inflight.length - 1; i >= 0; i--) {
+            const p = inflight[i] as Promise<unknown> & { settled?: boolean };
+            // We can't introspect settle state on stock Promise, so just await all when capped
+          }
+          await Promise.all(inflight.splice(0));
+        }
       }
     }
+    // Drain remaining
     if (buffer.length > 0) {
-      fileSent += await postChunk(mid, buffer, actualFilename, serviceKey);
+      inflight.push(upsertChunk(supa, merchantId, buffer.splice(0)).then((n) => { fileSent += n; }));
     }
+    await Promise.all(inflight.splice(0));
 
     try { await unlink(localPath); } catch { /* */ }
 
@@ -484,32 +514,30 @@ function mapRow(
   return product;
 }
 
-async function postChunk(
-  rakutenMid: string,
+// Direct upsert via Supabase service-role client (skips the Edge Function middleman).
+// Sets last_seen_at = now() and clears removed_at on conflict so tombstoned products
+// that come back in the feed reactivate automatically.
+async function upsertChunk(
+  supa: Supa,
+  merchantId: string,
   products: Record<string, unknown>[],
-  sftpFilename: string,
-  serviceKey: string,
 ): Promise<number> {
-  const res = await fetch(
-    `${SUPABASE_URL}/functions/v1/rakuten-import-products-once`,
-    {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${serviceKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        rakuten_mid: rakutenMid,
-        products,
-        full_feed: false,            // tombstone happens once at the end, not per chunk
-        sftp_filename: sftpFilename,
-      }),
-    },
-  );
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`EF ${res.status}: ${text.slice(0, 300)}`);
+  if (products.length === 0) return 0;
+  const nowIso = new Date().toISOString();
+  const rows = products.map((p) => ({
+    ...p,
+    merchant_id: merchantId,
+    last_seen_at: nowIso,
+    removed_at: null,
+  }));
+  const { error } = await supa
+    .from("rakuten_products")
+    .upsert(rows, {
+      onConflict: "merchant_id,product_id_in_feed",
+      ignoreDuplicates: false,
+    });
+  if (error) {
+    throw new Error(`upsert failed (${rows.length} rows): ${error.message}`);
   }
-  const json = (await res.json()) as { inserted_or_updated?: number; inserted?: number };
-  return json.inserted_or_updated ?? json.inserted ?? products.length;
+  return rows.length;
 }
