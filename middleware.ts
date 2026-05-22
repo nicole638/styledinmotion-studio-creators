@@ -8,9 +8,9 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Run on every request EXCEPT static assets so we don't pay the
-     * Supabase auth round-trip on hot-reloaded chunks.
+     * Run on every request EXCEPT static assets and machine-auth routes
+     * (cron endpoints authenticate via Bearer token, not Supabase session).
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/cron|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
