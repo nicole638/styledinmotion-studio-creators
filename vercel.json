@@ -3,5 +3,16 @@
   "framework": "nextjs",
   "buildCommand": "next build",
   "installCommand": "npm install",
-  "devCommand": "next dev -p 3001"
+  "devCommand": "next dev -p 3001",
+  "crons": [
+    {
+      "path": "/api/cron/rakuten-feed-sync",
+      "schedule": "0 6 * * *"
+    }
+  ],
+  "functions": {
+    "app/api/cron/rakuten-feed-sync/route.ts": {
+      "maxDuration": 300
+    }
+  }
 }
