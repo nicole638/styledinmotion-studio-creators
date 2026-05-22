@@ -209,6 +209,17 @@ export async function GET(req: NextRequest) {
       tombstoned[r.mid] = count ?? 0;
     }
 
+    // Refresh the deduped catalog materialized view so iOS Brands tab sees
+    // the latest products without size/color variant duplicates. Non-blocking
+    // (CONCURRENTLY) — reads keep working during refresh. Failure here is
+    // non-fatal; the matview just stays at the previous version until next run.
+    try {
+      await supa.rpc("refresh_affiliate_products");
+      log("✓ affiliate_products matview refreshed");
+    } catch (e) {
+      log("affiliate_products refresh failed:", (e as Error).message);
+    }
+
     const payload = {
       ok: results.every((r) => r.ok),
       sync_start: syncStart.toISOString(),
