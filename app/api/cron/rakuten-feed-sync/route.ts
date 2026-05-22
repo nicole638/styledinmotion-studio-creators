@@ -6,8 +6,9 @@
 // merchants like Bloomingdale's, or <MID>_<SID>_mp.txt.gz for single-catalog
 // merchants), parses pipe-delimited positional rows, and upserts products
 // directly into rakuten_products via the Supabase service-role client.
-// Chunks of 1.5K rows are submitted with up to 6 concurrent upserts in flight
-// for ~6x throughput vs serial. After all merchants are processed, marks any
+// Chunks of 500 rows are submitted with up to 3 concurrent upserts in flight —
+// sized to stay under Supabase's Postgres statement_timeout on the big
+// merchants (Bloomingdale's, COUTR). After all merchants are processed, marks any
 // product not seen in this run as removed_at = now() (tombstone pass).
 //
 // Vercel cron auth: requires CRON_SECRET env var; Vercel sends the request
@@ -44,8 +45,8 @@ const RAKUTEN_FTP_HOST = "aftp.linksynergy.com";
 const RAKUTEN_FTP_SID = "4705911";
 const SUPABASE_URL = "https://rghlcnrttvlvphzahudf.supabase.co";
 
-const CHUNK_SIZE = 1500;       // smaller chunks → smoother concurrency
-const UPSERT_CONCURRENCY = 6;  // 6 chunks in flight at once → ~6x throughput vs serial POST
+const CHUNK_SIZE = 500;        // smaller chunks dodge Supabase statement_timeout on large merchants (Bloomingdale's, COUTR)
+const UPSERT_CONCURRENCY = 3;  // 3 chunks in flight at once — was 6, dropped to keep Postgres happy
 
 // Category filtering — values are matched case-insensitively against col[3] (Primary Category)
 // of the first data row. Files whose primary category falls into SKIP_CATEGORIES are
