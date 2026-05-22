@@ -48,7 +48,10 @@ interface SyncResult {
   ok: boolean;
   sent?: number;
   seen?: number;
+  files_processed?: number;
+  files_skipped?: string[];
   error?: string;
+  folder_contents?: { name: string; size: number; type: string }[];
 }
 
 function log(...args: unknown[]) {
@@ -184,74 +187,119 @@ export async function GET(req: NextRequest) {
 }
 
 // ── Per-MID processing ──────────────────────────────────────────────────────
+// Rakuten delivers two file shapes:
+//   1. Single full catalog:        <MID>_<SID>_mp.txt.gz
+//   2. Per-category snapshots:     <MID>_<SID>_<CATEGORY>_cmp.txt.gz   (Bloomingdale's, etc.)
+// Either way we want only the full snapshots, NOT the deltas:
+//   skip *_cmp_delta.txt.gz, *_cmp_deltatemplate.txt.gz, *_mp_delta.txt.gz
 async function processMid(
   ftp: FtpClient,
   mid: string,
   serviceKey: string,
 ): Promise<SyncResult> {
-  const filename = `${mid}_${RAKUTEN_FTP_SID}_mp.txt.gz`;
-  const remotePath = `/${mid}/${filename}`;
   const tmpDir = path.join(os.tmpdir(), "rakuten-feed-sync");
   await mkdir(tmpDir, { recursive: true });
-  const localPath = path.join(tmpDir, filename);
 
-  // Confirm file exists + size
-  let fileInfo;
+  // List folder, classify files
+  let entries;
+  let folderEntries: { name: string; size: number; type: string }[] = [];
   try {
-    const entries = await ftp.list(`/${mid}`);
-    fileInfo = entries.find((e) => e.name === filename);
+    entries = await ftp.list(`/${mid}`);
+    folderEntries = entries.map((e) => ({
+      name: e.name,
+      size: e.size ?? 0,
+      type: e.isDirectory ? "dir" : e.isFile ? "file" : "other",
+    }));
   } catch (e) {
     return { mid, ok: false, error: `list_failed: ${(e as Error).message}` };
   }
-  if (!fileInfo) {
-    return { mid, ok: false, error: "file_not_found" };
+
+  // Build the snapshot file list.
+  // Match: <MID>_<SID>_*_cmp.txt.gz (category snapshot)  OR  <MID>_<SID>_mp.txt.gz (full catalog)
+  // Reject anything containing "delta" or "deltatemplate".
+  const snapshotPattern = new RegExp(
+    `^${mid}_${RAKUTEN_FTP_SID}_(\\d+_cmp|mp)\\.txt\\.gz$`,
+    "i",
+  );
+  const snapshotFiles = entries
+    .filter((e) => e.isFile && snapshotPattern.test(e.name) && !/delta/i.test(e.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  if (snapshotFiles.length === 0) {
+    return { mid, ok: false, error: "no_snapshot_files_found", folder_contents: folderEntries };
   }
-  log(`  MID ${mid}: ${filename} (${(fileInfo.size ?? 0).toLocaleString()} bytes)`);
 
-  // Download
-  try {
-    await ftp.downloadTo(localPath, remotePath);
-  } catch (e) {
-    return { mid, ok: false, error: `download_failed: ${(e as Error).message}` };
-  }
+  const totalBytes = snapshotFiles.reduce((s, f) => s + (f.size ?? 0), 0);
+  log(`  MID ${mid}: ${snapshotFiles.length} snapshot file(s), ${totalBytes.toLocaleString()} bytes total`);
 
-  // Stream-parse + chunk + POST
-  const rl = createInterface({
-    input: createReadStream(localPath).pipe(createGunzip()),
-    crlfDelay: Infinity,
-  });
-
-  let headers: string[] | null = null;
-  let separator = "|";
-  const buffer: Record<string, unknown>[] = [];
   let totalSent = 0;
   let totalSeen = 0;
+  let filesProcessed = 0;
+  const filesSkipped: string[] = [];
 
-  for await (const line of rl) {
-    if (!line.trim() || line.startsWith("Trailer Record")) continue;
-    if (!headers) {
-      separator = detectSeparator(line);
-      headers = line.split(separator).map((h) => h.trim().toLowerCase());
+  for (const fileInfo of snapshotFiles) {
+    const actualFilename = fileInfo.name;
+    const remotePath = `/${mid}/${actualFilename}`;
+    const localPath = path.join(tmpDir, actualFilename);
+
+    // Download
+    try {
+      await ftp.downloadTo(localPath, remotePath);
+    } catch (e) {
+      log(`    ✗ ${actualFilename}: download_failed — ${(e as Error).message}`);
+      filesSkipped.push(`${actualFilename}: ${(e as Error).message}`);
       continue;
     }
-    totalSeen++;
-    const product = mapRow(headers, line.split(separator));
-    if (!product) continue;
-    buffer.push(product);
 
-    if (buffer.length >= CHUNK_SIZE) {
-      const sent = await postChunk(mid, buffer.splice(0), filename, serviceKey);
-      totalSent += sent;
+    // Stream-parse + chunk + POST
+    const rl = createInterface({
+      input: createReadStream(localPath).pipe(createGunzip()),
+      crlfDelay: Infinity,
+    });
+
+    let headers: string[] | null = null;
+    let separator = "|";
+    const buffer: Record<string, unknown>[] = [];
+    let fileSent = 0;
+    let fileSeen = 0;
+
+    for await (const line of rl) {
+      if (!line.trim() || line.startsWith("Trailer Record")) continue;
+      if (!headers) {
+        separator = detectSeparator(line);
+        headers = line.split(separator).map((h) => h.trim().toLowerCase());
+        continue;
+      }
+      fileSeen++;
+      const product = mapRow(headers, line.split(separator));
+      if (!product) continue;
+      buffer.push(product);
+
+      if (buffer.length >= CHUNK_SIZE) {
+        fileSent += await postChunk(mid, buffer.splice(0), actualFilename, serviceKey);
+      }
     }
-  }
-  if (buffer.length > 0) {
-    totalSent += await postChunk(mid, buffer, filename, serviceKey);
+    if (buffer.length > 0) {
+      fileSent += await postChunk(mid, buffer, actualFilename, serviceKey);
+    }
+
+    try { await unlink(localPath); } catch { /* */ }
+
+    log(`    ✓ ${actualFilename}: ${fileSent.toLocaleString()} upserted (${fileSeen.toLocaleString()} rows)`);
+    totalSent += fileSent;
+    totalSeen += fileSeen;
+    filesProcessed++;
   }
 
-  try { await unlink(localPath); } catch { /* */ }
-
-  log(`  ✓ MID ${mid}: ${totalSent.toLocaleString()} products upserted`);
-  return { mid, ok: true, sent: totalSent, seen: totalSeen };
+  log(`  ✓ MID ${mid}: ${totalSent.toLocaleString()} total products across ${filesProcessed} file(s)`);
+  return {
+    mid,
+    ok: filesProcessed > 0,
+    sent: totalSent,
+    seen: totalSeen,
+    files_processed: filesProcessed,
+    ...(filesSkipped.length > 0 ? { files_skipped: filesSkipped } : {}),
+  };
 }
 
 function detectSeparator(headerLine: string): string {
