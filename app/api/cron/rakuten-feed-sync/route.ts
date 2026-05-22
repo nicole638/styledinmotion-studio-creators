@@ -52,6 +52,14 @@ interface SyncResult {
   files_skipped?: string[];
   error?: string;
   folder_contents?: { name: string; size: number; type: string }[];
+  // Diagnostic — surfaces actual file structure when sent=0
+  diag?: {
+    first_file?: string;
+    separator?: string;
+    headers?: string[];
+    sample_row?: Record<string, string>;
+    pid_hit_rate?: { with_pid: number; without_pid: number };
+  };
 }
 
 function log(...args: unknown[]) {
@@ -236,6 +244,9 @@ async function processMid(
   let totalSeen = 0;
   let filesProcessed = 0;
   const filesSkipped: string[] = [];
+  let diag: SyncResult["diag"] = undefined;
+  let pidHits = 0;
+  let pidMisses = 0;
 
   for (const fileInfo of snapshotFiles) {
     const actualFilename = fileInfo.name;
@@ -268,11 +279,32 @@ async function processMid(
       if (!headers) {
         separator = detectSeparator(line);
         headers = line.split(separator).map((h) => h.trim().toLowerCase());
+        // Capture diag from the very first file we process
+        if (!diag) {
+          diag = {
+            first_file: actualFilename,
+            separator: separator === "\t" ? "TAB" : separator,
+            headers: headers.slice(0, 60),  // cap to keep response small
+          };
+        }
         continue;
       }
       fileSeen++;
-      const product = mapRow(headers, line.split(separator));
-      if (!product) continue;
+      const values = line.split(separator);
+      const product = mapRow(headers, values);
+      if (!product) {
+        pidMisses++;
+        // Snapshot the first unmapped row for diag
+        if (diag && !diag.sample_row && pidMisses === 1) {
+          const sample: Record<string, string> = {};
+          for (let i = 0; i < Math.min(headers.length, 25); i++) {
+            sample[headers[i]] = (values[i] ?? "").slice(0, 80);
+          }
+          diag.sample_row = sample;
+        }
+        continue;
+      }
+      pidHits++;
       buffer.push(product);
 
       if (buffer.length >= CHUNK_SIZE) {
@@ -292,6 +324,7 @@ async function processMid(
   }
 
   log(`  ✓ MID ${mid}: ${totalSent.toLocaleString()} total products across ${filesProcessed} file(s)`);
+  if (diag) diag.pid_hit_rate = { with_pid: pidHits, without_pid: pidMisses };
   return {
     mid,
     ok: filesProcessed > 0,
@@ -299,6 +332,7 @@ async function processMid(
     seen: totalSeen,
     files_processed: filesProcessed,
     ...(filesSkipped.length > 0 ? { files_skipped: filesSkipped } : {}),
+    ...(diag ? { diag } : {}),
   };
 }
 
