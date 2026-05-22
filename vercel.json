@@ -6,8 +6,28 @@
   "devCommand": "next dev -p 3001",
   "crons": [
     {
-      "path": "/api/cron/rakuten-feed-sync",
+      "path": "/api/cron/rakuten-feed-sync?mid=13867",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/rakuten-feed-sync?mid=54152",
+      "schedule": "10 6 * * *"
+    },
+    {
+      "path": "/api/cron/rakuten-feed-sync?mid=49384",
+      "schedule": "20 6 * * *"
+    },
+    {
+      "path": "/api/cron/rakuten-feed-sync?mid=3156",
+      "schedule": "25 6 * * *"
+    },
+    {
+      "path": "/api/cron/rakuten-feed-sync?mid=24943",
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron/rakuten-feed-sync?mid=43281",
+      "schedule": "35 6 * * *"
     }
   ],
   "functions": {
