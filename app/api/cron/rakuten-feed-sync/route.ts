@@ -79,9 +79,42 @@ export async function GET(req: NextRequest) {
 
   const supa = createClient(SUPABASE_URL, serviceKey);
   const syncStart = new Date();
-  const ftp = new FtpClient(30_000);
+  const ftp = new FtpClient(90_000);     // bumped from 30s — first attempt timed out on control socket
 
   log("Starting sync", { midFilter, syncStart: syncStart.toISOString() });
+
+  // Pre-flight: bare TCP probe to port 21 so we can distinguish
+  // "TCP firewalled" (Vercel egress blocked) from "FTP protocol issue"
+  // (TLS mismatch, slow banner, auth, etc.).
+  try {
+    const net = await import("node:net");
+    const tcpProbe = await new Promise<{ ok: boolean; ms: number; err?: string }>((resolve) => {
+      const t0 = Date.now();
+      const sock = net.createConnection({ host: RAKUTEN_FTP_HOST, port: 21, timeout: 15_000 });
+      sock.once("connect", () => {
+        sock.destroy();
+        resolve({ ok: true, ms: Date.now() - t0 });
+      });
+      sock.once("timeout", () => {
+        sock.destroy();
+        resolve({ ok: false, ms: Date.now() - t0, err: "tcp_timeout_15s" });
+      });
+      sock.once("error", (e: Error) => resolve({ ok: false, ms: Date.now() - t0, err: e.message }));
+    });
+    log(`TCP probe ${RAKUTEN_FTP_HOST}:21 →`, tcpProbe);
+    if (!tcpProbe.ok) {
+      return NextResponse.json(
+        {
+          error: "tcp_blocked",
+          probe: tcpProbe,
+          note: "Vercel egress (AWS Lambda iad1) can't reach Rakuten FTP on port 21 — IP-level block",
+        },
+        { status: 502 },
+      );
+    }
+  } catch (e) {
+    log("TCP probe threw:", (e as Error).message);
+  }
 
   try {
     await ftp.access({
