@@ -369,10 +369,78 @@ function toNumber(v: string | undefined): number | null {
   return m ? parseFloat(m[1]) : null;
 }
 
-// Positional parser for Rakuten cmp/mp files — schema TBD from diag output.
-// Returns null until we know the actual column layout.
-function mapRowPositional(_values: string[]): Record<string, unknown> | null {
-  return null;
+// Rakuten Category Merchant Product (CMP) v2 positional schema.
+// No column header row — fields are pipe-delimited and ordered:
+//   0  Product ID (long offer ID, used as product_id_in_feed)
+//   1  Product Name
+//   2  Merchant SKU
+//   3  Primary Category
+//   4  Secondary Category
+//   5  Buy URL (Rakuten-tracked click link)
+//   6  Image URL
+//   7  (reserved)
+//   8  Short Description
+//   9  Long Description
+//   10 Discount
+//   11 Discount Type
+//   12 Sale Price
+//   13 Retail Price
+//   14 Begin Date
+//   15 End Date
+//   16 Brand
+//   17 Shipping
+//   18 Keywords
+//   19 Manufacturer Part Number / EAN
+//   20 Manufacturer Name
+//   21 ISBN
+//   22 Stock Availability ("in-stock" / "out-of-stock" / "unavailable")
+//   23 UPC
+//   24 Class ID
+//   25 Currency
+//   26 Offline (Y/N)
+//   27 Impression pixel
+//   28 Advertiser-internal ID
+//   29 Full Category Path
+//   30 Size
+//   31 Material
+//   32 Color
+//   33 Gender
+//   34 (reserved)
+//   35 Age Range
+function mapRowPositional(v: string[]): Record<string, unknown> | null {
+  const get = (i: number) => (v[i] ?? "").trim();
+  const pid = get(0);
+  if (!pid) return null;
+
+  const imageUrl = get(6);
+  const stock = get(22).toLowerCase();
+  const inStock = stock ? stock === "in-stock" || stock === "instock" : true;
+
+  const product: Record<string, unknown> = {
+    product_id_in_feed: pid,
+    sku: get(2) || pid,
+    name: get(1) || null,
+    description: get(8) || get(9) || null,
+    brand: get(20) || get(16) || null,
+    category: get(3) || null,
+    merchant_category: get(4) || null,
+    price: toNumber(get(13)),
+    search_price: toNumber(get(12)) || toNumber(get(13)),
+    rrp_price: toNumber(get(13)),
+    currency: (get(25) || "USD").slice(0, 8),
+    in_stock: inStock,
+    product_url: get(5) || null,
+    rakuten_deep_link: get(5) || null,
+    image_urls: imageUrl ? [imageUrl] : [],
+  };
+
+  // Strip empty optional fields (keep image_urls + in_stock + product_id_in_feed)
+  for (const k of Object.keys(product)) {
+    if (k === "image_urls" || k === "in_stock" || k === "product_id_in_feed") continue;
+    const val = product[k];
+    if (val === null || val === undefined || val === "") delete product[k];
+  }
+  return product;
 }
 
 function mapRow(
