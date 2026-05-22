@@ -88,6 +88,8 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const midFilter = url.searchParams.get("mid")?.trim() || null;
+  // ?files=N caps how many snapshot files we process per merchant — diagnostic / smoke-test knob.
+  const filesCap = Number(url.searchParams.get("files") ?? "0") || null;
 
   const supa = createClient(SUPABASE_URL, serviceKey);
   const syncStart = new Date();
@@ -150,7 +152,7 @@ export async function GET(req: NextRequest) {
     const results: SyncResult[] = [];
     for (const mid of midFolders) {
       try {
-        const r = await processMid(ftp, mid, serviceKey);
+        const r = await processMid(ftp, mid, serviceKey, filesCap);
         results.push(r);
       } catch (e) {
         log(`  ✗ MID ${mid} unrecoverable:`, (e as Error).message);
@@ -205,6 +207,7 @@ async function processMid(
   ftp: FtpClient,
   mid: string,
   serviceKey: string,
+  filesCap: number | null = null,
 ): Promise<SyncResult> {
   const tmpDir = path.join(os.tmpdir(), "rakuten-feed-sync");
   await mkdir(tmpDir, { recursive: true });
@@ -230,9 +233,12 @@ async function processMid(
     `^${mid}_${RAKUTEN_FTP_SID}_(\\d+_cmp|mp)\\.txt\\.gz$`,
     "i",
   );
-  const snapshotFiles = entries
+  let snapshotFiles = entries
     .filter((e) => e.isFile && snapshotPattern.test(e.name) && !/delta/i.test(e.name))
     .sort((a, b) => a.name.localeCompare(b.name));
+  if (filesCap && snapshotFiles.length > filesCap) {
+    snapshotFiles = snapshotFiles.slice(0, filesCap);
+  }
 
   if (snapshotFiles.length === 0) {
     return { mid, ok: false, error: "no_snapshot_files_found", folder_contents: folderEntries };
