@@ -47,8 +47,10 @@ const SUPABASE_URL = "https://rghlcnrttvlvphzahudf.supabase.co";
 const CHUNK_SIZE = 1500;       // smaller chunks → smoother concurrency
 const UPSERT_CONCURRENCY = 6;  // 6 chunks in flight at once → ~6x throughput vs serial POST
 
-// Use a single Supabase client across the whole invocation
-type Supa = ReturnType<typeof createClient>;
+// Use a single Supabase client across the whole invocation.
+// Typed loosely — generic inference between createClient call sites is brittle in TS 5.4.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Supa = any;
 
 interface SyncResult {
   mid: string;
