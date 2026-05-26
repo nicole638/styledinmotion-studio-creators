@@ -28,6 +28,14 @@
     {
       "path": "/api/cron/rakuten-feed-sync?mid=43281",
       "schedule": "35 6 * * *"
+    },
+    {
+      "path": "/api/cron/rakuten-feed-sync?mid=53628",
+      "schedule": "40 6 * * *"
+    },
+    {
+      "path": "/api/cron/rakuten-feed-sync?mid=54167",
+      "schedule": "45 6 * * *"
     }
   ],
   "functions": {
