@@ -80,6 +80,8 @@ interface SyncResult {
   seen?: number;
   files_processed?: number;
   files_skipped?: string[];
+  files_skipped_already_fresh?: number;  // checkpoint says these are still fresh from a prior run
+  files_remaining?: number;              // files we didn't get to (Vercel timeout)
   error?: string;
   folder_contents?: { name: string; size: number; type: string }[];
   // Diagnostic — surfaces actual file structure when sent=0
@@ -120,6 +122,9 @@ export async function GET(req: NextRequest) {
   const midFilter = url.searchParams.get("mid")?.trim() || null;
   // ?files=N caps how many snapshot files we process per merchant — diagnostic / smoke-test knob.
   const filesCap = Number(url.searchParams.get("files") ?? "0") || null;
+  // ?force=1 bypasses the per-file checkpoint and re-processes everything.
+  // Useful when we want to force a full refresh (after schema changes, etc).
+  const force = url.searchParams.get("force") === "1";
 
   const supa = createClient(SUPABASE_URL, serviceKey);
   const syncStart = new Date();
@@ -182,7 +187,7 @@ export async function GET(req: NextRequest) {
     const results: SyncResult[] = [];
     for (const mid of midFolders) {
       try {
-        const r = await processMid(ftp, mid, supa, filesCap);
+        const r = await processMid(ftp, mid, supa, filesCap, force);
         results.push(r);
       } catch (e) {
         log(`  ✗ MID ${mid} unrecoverable:`, (e as Error).message);
@@ -265,6 +270,7 @@ async function processMid(
   mid: string,
   supa: Supa,
   filesCap: number | null = null,
+  force: boolean = false,
 ): Promise<SyncResult> {
   // Pre-fetch merchant UUID (one DB roundtrip per merchant, not per chunk)
   const { data: merchant } = await supa
@@ -300,12 +306,59 @@ async function processMid(
     `^${mid}_${RAKUTEN_FTP_SID}_(\\d+_cmp|mp)\\.txt\\.gz$`,
     "i",
   );
-  let snapshotFiles = entries
-    .filter((e) => e.isFile && snapshotPattern.test(e.name) && !/delta/i.test(e.name))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const candidateFiles = entries
+    .filter((e) => e.isFile && snapshotPattern.test(e.name) && !/delta/i.test(e.name));
+
+  // ── Checkpoint-aware ordering ──
+  // Skip files whose last_processed_at is already >= file_mtime (Rakuten
+  // hasn't touched them since we last processed). Sort the rest "stalest first"
+  // so each Vercel-cron-bounded run advances the catalog further instead of
+  // re-doing the same alphabetically-first files every day.
+  //
+  // ?force=1 bypasses this entirely and re-processes everything.
+  let stateMap = new Map<string, { last_processed_at: string; file_mtime: string }>();
+  if (!force) {
+    try {
+      const { data: state } = await supa
+        .from("rakuten_file_sync_state")
+        .select("filename, last_processed_at, file_mtime")
+        .eq("merchant_id", merchantId);
+      for (const row of state ?? []) {
+        stateMap.set(row.filename, row);
+      }
+    } catch (e) {
+      log(`  MID ${mid}: checkpoint read failed, processing all files: ${(e as Error).message}`);
+    }
+  }
+
+  let filesSkippedAlreadyFresh = 0;
+  let snapshotFiles = candidateFiles.filter((e) => {
+    if (force) return true;
+    const cp = stateMap.get(e.name);
+    if (!cp) return true; // never processed → include
+    const mtime = e.modifiedAt ?? new Date(0);
+    if (new Date(cp.last_processed_at) >= mtime) {
+      filesSkippedAlreadyFresh++;
+      return false;
+    }
+    return true;
+  });
+
+  // Stalest first: never-processed before processed-but-stale; among
+  // processed, oldest last_processed_at first.
+  snapshotFiles.sort((a, b) => {
+    const aCp = stateMap.get(a.name);
+    const bCp = stateMap.get(b.name);
+    if (!aCp && !bCp) return a.name.localeCompare(b.name);
+    if (!aCp) return -1;
+    if (!bCp) return 1;
+    return new Date(aCp.last_processed_at).getTime() - new Date(bCp.last_processed_at).getTime();
+  });
+
   if (filesCap && snapshotFiles.length > filesCap) {
     snapshotFiles = snapshotFiles.slice(0, filesCap);
   }
+  const totalFilesAvailable = candidateFiles.length;
 
   if (snapshotFiles.length === 0) {
     return { mid, ok: false, error: "no_snapshot_files_found", folder_contents: folderEntries };
@@ -470,16 +523,36 @@ async function processMid(
       totalSeen += fileSeen;
       filesProcessed++;
     }
+
+    // ── Checkpoint this file (even if category-filtered) so next run skips it.
+    // For a category-skipped file the file_mtime is the Rakuten-side mtime; we
+    // won't re-download it until Rakuten regenerates it.
+    try {
+      await supa.from("rakuten_file_sync_state").upsert({
+        merchant_id: merchantId,
+        filename: actualFilename,
+        file_mtime: (fileInfo.modifiedAt ?? new Date()).toISOString(),
+        last_processed_at: new Date().toISOString(),
+        last_product_count: fileSent,
+      }, { onConflict: "merchant_id,filename" });
+    } catch (e) {
+      log(`    ! checkpoint write failed for ${actualFilename}: ${(e as Error).message}`);
+    }
   }
 
-  log(`  ✓ MID ${mid}: ${totalSent.toLocaleString()} total products across ${filesProcessed} file(s)`);
+  // Files we never got to in this run (Vercel timeout, etc.) — next run picks
+  // them up first since their last_processed_at is still oldest.
+  const filesRemaining = snapshotFiles.length - filesProcessed - filesSkipped.length;
+  log(`  ✓ MID ${mid}: ${totalSent.toLocaleString()} total products across ${filesProcessed} file(s), ${filesSkippedAlreadyFresh} already-fresh, ${Math.max(0, filesRemaining)} remaining of ${totalFilesAvailable} total`);
   if (diag) diag.pid_hit_rate = { with_pid: pidHits, without_pid: pidMisses };
   return {
     mid,
-    ok: filesProcessed > 0,
+    ok: filesProcessed > 0 || filesSkippedAlreadyFresh > 0,
     sent: totalSent,
     seen: totalSeen,
     files_processed: filesProcessed,
+    files_skipped_already_fresh: filesSkippedAlreadyFresh,
+    ...(filesRemaining > 0 ? { files_remaining: filesRemaining } : {}),
     ...(filesSkipped.length > 0 ? { files_skipped: filesSkipped } : {}),
     ...(diag ? { diag } : {}),
   };
