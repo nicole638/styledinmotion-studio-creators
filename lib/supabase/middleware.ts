@@ -17,6 +17,9 @@ const PUBLIC_PATHS = [
   // the recovery email. The page itself checks for a recovery session
   // and shows an error if one isn't present.
   "/auth/reset",
+  // /join is the public creator-acquisition landing page (link-in-bio
+  // destination from @styled.in.motion). Indexed by search engines.
+  "/join",
 ];
 
 function isPublic(pathname: string): boolean {

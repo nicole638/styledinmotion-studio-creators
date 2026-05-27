@@ -13,6 +13,7 @@ import {
   Megaphone,
   FileSpreadsheet,
   Store,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -51,6 +52,12 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
     href: "/admin/ingest-amazon",
     label: "Ingest Amazon",
     icon: FileSpreadsheet,
+    status: "live",
+  },
+  {
+    href: "/admin/brand-partnerships",
+    label: "Brand partnerships",
+    icon: Sparkles,
     status: "live",
   },
 ];
