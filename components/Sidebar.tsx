@@ -14,6 +14,7 @@ import {
   FileSpreadsheet,
   Store,
   Sparkles,
+  MousePointerClick,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -58,6 +59,12 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
     href: "/admin/brand-partnerships",
     label: "Brand partnerships",
     icon: Sparkles,
+    status: "live",
+  },
+  {
+    href: "/admin/click-analytics",
+    label: "Click analytics",
+    icon: MousePointerClick,
     status: "live",
   },
 ];
