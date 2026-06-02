@@ -29,6 +29,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, status: "live" },
   { href: "/closet", label: "Closet", icon: Shirt, status: "live" },
+  { href: "/brands", label: "Brands", icon: Store, status: "live" },
   { href: "/looks", label: "Looks", icon: Camera, status: "live" },
   { href: "/collage", label: "Collage", icon: Layers, status: "live" },
   { href: "/drafts", label: "Drafts", icon: FileEdit, status: "live" },
