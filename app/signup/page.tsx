@@ -13,8 +13,8 @@ export default function SignupPage() {
           </p>
           <h1 className="font-display text-4xl">Become a creator.</h1>
           <p className="mt-3 text-sm text-muted">
-            Studio access is invite-only during beta. If you have an
-            invite, sign up with the email it was sent to.
+            Style your closet, share your looks, and earn every time a
+            shopper buys what you styled. Free to join — no invite needed.
           </p>
         </div>
 

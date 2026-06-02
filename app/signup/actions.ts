@@ -2,7 +2,6 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 
 export type SignupState = {
   error: string | null;
@@ -25,39 +24,16 @@ export async function signupAction(
     return { error: "Password must be at least 8 characters.", notice: null };
   }
 
-  // 1. Invite gate — call the SECURITY DEFINER consume function. Returns
-  // false if no invite or already used. We do NOT mark used yet — defer
-  // until signup actually succeeds, in case Supabase rejects (e.g. already
-  // registered). For Phase 1A simplicity we just check existence first.
-  const admin = createAdminClient();
-  const { data: invite, error: inviteErr } = await admin
-    .from("creator_web_invites")
-    .select("id, used_at")
-    .ilike("email", email)
-    .maybeSingle();
+  // Open creator signup — iOS has no invite gate and beta data showed the
+  // web gate had 0% successful conversions across 17 issues. Anyone with
+  // an email can self-sign-up. If quality moderation is needed later,
+  // add a creator_profiles.is_pending_review flag rather than re-gating.
+  //
+  // The web invite check used to live here (removed 2026-06-02). The
+  // creator_web_invites table is left in place — it's a no-op now and can
+  // be dropped in a later cleanup migration.
 
-  if (inviteErr) {
-    return {
-      error: "Could not verify your invite. Try again or contact support.",
-      notice: null,
-    };
-  }
-  if (!invite) {
-    return {
-      error:
-        "We couldn't find an invite for that email. Reach out to support@styledinmotion.app for access.",
-      notice: null,
-    };
-  }
-  if (invite.used_at) {
-    return {
-      error:
-        "That invite has already been used. Try signing in instead, or use forgot password.",
-      notice: null,
-    };
-  }
-
-  // 2. Create the auth user with creator metadata. The DB trigger
+  // Create the auth user with creator metadata. The DB trigger
   // handle_new_user_signup creates the matching creators + creator_profiles
   // rows. We pass first/last name + user_type='creator' in metadata.
   const supabase = createClient();
@@ -75,7 +51,7 @@ export async function signupAction(
       // server-side (HttpOnly cookies). After exchange, /auth/callback
       // redirects to /, which the middleware handles for logged-in
       // users.
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://styledinmotion-studio-creators.vercel.app"}/auth/callback?next=${encodeURIComponent("/")}`,
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://studio.styledinmotion.studio"}/auth/callback?next=${encodeURIComponent("/")}`,
     },
   });
 
@@ -83,13 +59,7 @@ export async function signupAction(
     return { error: error.message, notice: null };
   }
 
-  // 3. Mark the invite consumed.
-  await admin
-    .from("creator_web_invites")
-    .update({ used_at: new Date().toISOString() })
-    .eq("id", invite.id);
-
-  // 4. If Supabase has email confirmation enabled, the user won't have a
+  // If Supabase has email confirmation enabled, the user won't have a
   // session yet. Surface a notice instead of redirecting.
   if (!data.session) {
     return {
