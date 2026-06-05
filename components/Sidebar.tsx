@@ -15,6 +15,7 @@ import {
   Store,
   Sparkles,
   MousePointerClick,
+  Building2,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -38,6 +39,12 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 const ADMIN_NAV_ITEMS: NavItem[] = [
+  {
+    href: "/admin/storefronts",
+    label: "Storefronts",
+    icon: Building2,
+    status: "live",
+  },
   {
     href: "/admin/campaigns",
     label: "Campaigns",
