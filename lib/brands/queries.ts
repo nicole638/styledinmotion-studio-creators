@@ -97,16 +97,25 @@ export async function fetchBrandProducts(
   const from = page * pageSize;
   const to = from + pageSize - 1;
 
+  // Pointing at `affiliate_products_live` (regular view) instead of the
+  // `affiliate_products` matview. The matview is the dedup'd snapshot, but
+  // its REFRESH exceeds Supabase's 120s statement-timeout wall on our
+  // 280K-row dataset — newly-added merchants don't appear there until the
+  // architectural per-network split lands (task #206). The live view skips
+  // the expensive DISTINCT ON dedupe and reads straight from
+  // affiliate_products_raw with the same in_stock/removed/has-image filters
+  // + infer_department column. Trade-off: some Rakuten size/color variants
+  // appear as separate rows; acceptable for browse because the creator
+  // picks one. Newly-onboarded merchants (Paul Smith, etc.) surface
+  // immediately. Swap back to `affiliate_products` once #206 ships.
   let q = supabase
-    .from("affiliate_products")
+    .from("affiliate_products_live")
     .select(
       "id, network, merchant_id, name, brand, department, category, price, " +
         "currency, in_stock, product_url, deep_link, image_urls",
       { count: "exact" },
     )
     .eq("merchant_id", opts.merchantId)
-    .eq("in_stock", true)
-    .is("removed_at", null)
     .order("created_at", { ascending: false })
     .range(from, to);
 
@@ -137,8 +146,12 @@ export async function fetchBrandProductById(
   id: string,
 ): Promise<BrandProduct | null> {
   const supabase = createClient();
+  // Same swap as fetchBrandProducts above — using the live view so newly-
+  // onboarded merchants resolve here too. Without this, an Add-to-closet
+  // tap on a Paul Smith product would 404 even though we just showed it on
+  // the grid.
   const { data, error } = await supabase
-    .from("affiliate_products")
+    .from("affiliate_products_live")
     .select(
       "id, network, merchant_id, name, brand, department, category, price, " +
         "currency, in_stock, product_url, deep_link, image_urls",
