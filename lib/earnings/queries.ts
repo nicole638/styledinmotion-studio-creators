@@ -243,6 +243,100 @@ export async function fetchRecentCommissions(
  * have hundreds of distinct looks driving sales).
  */
 /**
+ * Per-item performance. Returns the signed-in creator's closet items ranked
+ * by clicks, with looks-featured-in count, $ earned, and commission count.
+ * Server-side aggregation via the `creator_item_performance(p_creator_id)`
+ * SECURITY DEFINER RPC (gate-checks auth.uid() = p_creator_id internally).
+ */
+export interface CreatorItemPerf {
+  itemId: string;
+  name: string | null;
+  brand: string | null;
+  category: string | null;
+  photoUrl: string | null;
+  clicks: number;
+  looksCount: number;
+  earnings: number;
+  commissionCount: number;
+}
+
+export async function fetchItemPerformance(): Promise<CreatorItemPerf[]> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase.rpc("creator_item_performance", {
+    p_creator_id: user.id,
+  });
+  if (error) {
+    console.warn("[earnings] fetchItemPerformance error:", error.message);
+    return [];
+  }
+
+  return ((data ?? []) as Array<{
+    item_id: string;
+    name: string | null;
+    brand: string | null;
+    category: string | null;
+    photo_url: string | null;
+    clicks: number;
+    looks_count: number;
+    earnings_usd: string | number | null;
+    commission_count: number;
+  }>).map((row) => ({
+    itemId: row.item_id,
+    name: row.name,
+    brand: row.brand,
+    category: row.category,
+    photoUrl: row.photo_url,
+    clicks: row.clicks ?? 0,
+    looksCount: row.looks_count ?? 0,
+    earnings: Number.parseFloat(String(row.earnings_usd ?? 0)),
+    commissionCount: row.commission_count ?? 0,
+  }));
+}
+
+/**
+ * Per-network breakdown for "Traffic by network" tile. Buckets clicks +
+ * commissions by affiliate_network ('amazon' | 'awin' | 'cj' | 'unaffiliated').
+ */
+export interface CreatorNetworkBreakdown {
+  network: string;
+  clicks: number;
+  earnings: number;
+  commissionCount: number;
+}
+
+export async function fetchClicksByNetwork(): Promise<CreatorNetworkBreakdown[]> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase.rpc("creator_clicks_by_network", {
+    p_creator_id: user.id,
+  });
+  if (error) {
+    console.warn("[earnings] fetchClicksByNetwork error:", error.message);
+    return [];
+  }
+  return ((data ?? []) as Array<{
+    network: string;
+    clicks: number;
+    earnings_usd: string | number | null;
+    commission_count: number;
+  }>).map((row) => ({
+    network: row.network,
+    clicks: row.clicks ?? 0,
+    earnings: Number.parseFloat(String(row.earnings_usd ?? 0)),
+    commissionCount: row.commission_count ?? 0,
+  }));
+}
+
+/**
  * Per-look performance table data. Combines:
  *   - looks (one row per published look, scoped by RLS to the signed-in creator)
  *   - looks.clicks (denormalized, already on the row)

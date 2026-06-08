@@ -7,6 +7,8 @@ import {
   fetchRecentCommissions,
   fetchTopLooksByEarnings,
   fetchLookPerformance,
+  fetchItemPerformance,
+  fetchClicksByNetwork,
 } from "@/lib/earnings/queries";
 import {
   formatMoney,
@@ -24,20 +26,29 @@ export default async function EarningsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [summary, recent, topLooks, lookPerf, { data: profile }] =
-    await Promise.all([
-      fetchEarningsSummary(),
-      fetchRecentCommissions(25),
-      fetchTopLooksByEarnings(5),
-      fetchLookPerformance(),
-      // Fetch payout_email so we can surface a nudge banner when commissions
-      // exist but no payment method is set — same UX as iOS dashboard banner.
-      supabase
-        .from("creator_profiles")
-        .select("payout_email")
-        .eq("creator_id", user.id)
-        .maybeSingle(),
-    ]);
+  const [
+    summary,
+    recent,
+    topLooks,
+    lookPerf,
+    itemPerf,
+    networkMix,
+    { data: profile },
+  ] = await Promise.all([
+    fetchEarningsSummary(),
+    fetchRecentCommissions(25),
+    fetchTopLooksByEarnings(5),
+    fetchLookPerformance(),
+    fetchItemPerformance(),
+    fetchClicksByNetwork(),
+    // Fetch payout_email so we can surface a nudge banner when commissions
+    // exist but no payment method is set — same UX as iOS dashboard banner.
+    supabase
+      .from("creator_profiles")
+      .select("payout_email")
+      .eq("creator_id", user.id)
+      .maybeSingle(),
+  ]);
 
   const hasCommissions =
     summary.countsByStatus.pending +
@@ -314,6 +325,141 @@ export default async function EarningsPage() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            </section>
+          ) : null}
+
+          {/* Traffic by network — buckets every real shopper click + commission
+              by the affiliate network that handled it. Empty buckets (e.g.
+              CJ before any CJ click has happened) are simply omitted by
+              the RPC, so the card scales from 0 → N networks without empty
+              rows. */}
+          {networkMix.length > 0 ? (
+            <section className="mt-12">
+              <h2 className="font-display text-2xl">Traffic by network</h2>
+              <p className="mt-1 text-sm text-muted">
+                Where your clicks land before they hit the merchant.
+                Unaffiliated = clicks on merchants we don&apos;t yet wrap.
+              </p>
+              <ul className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {networkMix.map((row) => {
+                  const label =
+                    row.network === "amazon"
+                      ? "Amazon"
+                      : row.network === "awin"
+                        ? "Awin"
+                        : row.network === "cj"
+                          ? "CJ"
+                          : "Unaffiliated";
+                  return (
+                    <li
+                      key={row.network}
+                      className="rounded-2xl border border-border bg-card p-4"
+                    >
+                      <p className="text-[10px] uppercase tracking-widest text-muted">
+                        {label}
+                      </p>
+                      <p className="mt-2 font-display text-2xl tabular-nums">
+                        {row.clicks.toLocaleString()}
+                      </p>
+                      <p className="text-xs text-muted">
+                        {row.clicks === 1 ? "click" : "clicks"}
+                      </p>
+                      {row.earnings > 0 ? (
+                        <p className="mt-2 text-sm text-rose font-medium tabular-nums">
+                          {formatMoney(row.earnings)} earned
+                        </p>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
+
+          {/* Per-item performance — every closet item ranked by clicks. Powered
+              by creator_item_performance RPC (server-side aggregation across
+              click_events × look_items × commissions). Shows up only when
+              there's at least one item with clicks; cleaner than rendering
+              an empty "no items" table. */}
+          {itemPerf.length > 0 && itemPerf.some((r) => r.clicks > 0) ? (
+            <section className="mt-12">
+              <h2 className="font-display text-2xl">Performance by item</h2>
+              <p className="mt-1 text-sm text-muted">
+                Your closet, ranked by clicks. Use this to see which pieces
+                shoppers gravitate toward and which deserve a fresh look.
+              </p>
+              <div className="mt-5 rounded-2xl border border-border bg-card overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-bg/60 border-b border-border">
+                    <tr className="text-left text-xs uppercase tracking-wider text-muted">
+                      <th className="px-4 py-3 w-12"></th>
+                      <th className="px-4 py-3">Item</th>
+                      <th className="px-4 py-3">Brand</th>
+                      <th className="px-4 py-3 text-right">In looks</th>
+                      <th className="px-4 py-3 text-right">Clicks</th>
+                      <th className="px-4 py-3 text-right">Sales</th>
+                      <th className="px-4 py-3 text-right">$ Earned</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {itemPerf
+                      .filter((row) => row.clicks > 0)
+                      .slice(0, 25)
+                      .map((row) => (
+                        <tr
+                          key={row.itemId}
+                          className="border-b border-border last:border-b-0 hover:bg-bg/30 transition-colors"
+                        >
+                          <td className="px-4 py-3">
+                            <div className="w-10 h-12 rounded-md bg-bg overflow-hidden">
+                              {row.photoUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={row.photoUrl}
+                                  alt={row.name ?? ""}
+                                  className="w-full h-full object-contain p-1"
+                                />
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Link
+                              href={`/closet/${row.itemId}`}
+                              className="font-medium hover:text-rose truncate block max-w-[18ch]"
+                            >
+                              {row.name ?? "Untitled piece"}
+                            </Link>
+                            {row.category ? (
+                              <span className="text-xs text-muted">
+                                {row.category}
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3 text-muted truncate max-w-[14ch]">
+                            {row.brand ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-muted">
+                            {row.looksCount}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {row.clicks.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-muted">
+                            {row.commissionCount}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums font-medium">
+                            {row.earnings > 0 ? formatMoney(row.earnings) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                {itemPerf.filter((r) => r.clicks > 0).length > 25 ? (
+                  <p className="px-4 py-3 text-xs text-muted border-t border-border">
+                    Showing top 25 by clicks. Full export coming soon.
+                  </p>
+                ) : null}
               </div>
             </section>
           ) : null}
