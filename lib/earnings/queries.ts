@@ -242,6 +242,149 @@ export async function fetchRecentCommissions(
  * a single fetch since we expect this to be small (most creators won't
  * have hundreds of distinct looks driving sales).
  */
+/**
+ * Per-look performance table data. Combines:
+ *   - looks (one row per published look, scoped by RLS to the signed-in creator)
+ *   - looks.clicks (denormalized, already on the row)
+ *   - earnings rollup (from fetchEarningsByLookMap)
+ *   - look_items count (so the table can show "5 pieces" alongside the perf)
+ *
+ * Used by the /earnings per-look table. Sorted server-side by clicks desc
+ * (highest-traffic looks first); the table component re-sorts client-side
+ * if the user toggles a column.
+ *
+ * Returns published looks only — drafts have zero shopper traffic by
+ * definition and would just pollute the table with $0/0-click rows.
+ */
+export async function fetchLookPerformance(): Promise<
+  Array<{
+    lookId: string;
+    title: string;
+    coverPhotoUrl: string | null;
+    itemCount: number;
+    clicks: number;
+    earnings: number;
+    commissionCount: number;
+    publishedAt: string | null;
+  }>
+> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  // Earnings rollup + the looks query run in parallel — same pattern as the
+  // /looks grid uses, kept independent here so this helper stays standalone
+  // (the earnings page renders before the /looks grid in the user journey).
+  const [{ data: rows, error }, earningsMap] = await Promise.all([
+    supabase
+      .from("looks")
+      .select(
+        "id, title, cover_photo_url, clicks, published_at, look_items(count)",
+      )
+      .eq("creator_id", user.id)
+      .eq("archived", false)
+      .not("published_at", "is", null)
+      .order("clicks", { ascending: false, nullsFirst: false }),
+    fetchEarningsByLookMap(),
+  ]);
+  if (error) {
+    console.warn("[earnings] fetchLookPerformance error:", error.message);
+    return [];
+  }
+
+  type RawRow = {
+    id: string;
+    title: string;
+    cover_photo_url: string | null;
+    clicks: number | null;
+    published_at: string | null;
+    look_items?: Array<{ count: number }>;
+  };
+
+  return ((rows ?? []) as unknown as RawRow[]).map((row) => {
+    const earnings = earningsMap[row.id];
+    return {
+      lookId: row.id,
+      title: row.title || "Untitled look",
+      coverPhotoUrl: row.cover_photo_url ?? null,
+      itemCount: Array.isArray(row.look_items) && row.look_items[0]
+        ? row.look_items[0].count
+        : 0,
+      clicks: row.clicks ?? 0,
+      earnings: earnings?.earnings ?? 0,
+      commissionCount: earnings?.commissionCount ?? 0,
+      publishedAt: row.published_at,
+    };
+  });
+}
+
+/**
+ * Per-look earnings rollup keyed by look_id. Used by:
+ *   - The /looks grid: render a $ badge under each card.
+ *   - The /earnings per-look performance table: full sortable list.
+ *
+ * Counts confirmed + paid commissions. Pending is intentionally excluded
+ * here — those are still "unconfirmed by the affiliate network" and
+ * showing them as earnings would over-promise. The earnings-summary tile
+ * separately surfaces pending.
+ *
+ * Returns Record<lookId, {earnings, commissionCount}>. Looks with zero
+ * commissions are NOT in the map; callers should default to 0.
+ */
+export async function fetchEarningsByLookMap(): Promise<
+  Record<string, { earnings: number; commissionCount: number }>
+> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return {};
+
+  // Same two-step pattern as fetchTopLooksByEarnings: commissions →
+  // click_events (look_id resolver). We can't pull look_id directly
+  // because commissions has no FK to looks — it links via click_events.
+  const { data: rows, error } = await supabase
+    .from("commissions")
+    .select("creator_share, commission_total, status, click_event_id")
+    .eq("creator_id", user.id)
+    .in("status", ["confirmed", "paid"]);
+  if (error || !rows || rows.length === 0) return {};
+
+  const clickIds = rows
+    .map((r) => r.click_event_id)
+    .filter((id): id is string => !!id);
+  if (clickIds.length === 0) return {};
+
+  const { data: clicks } = await supabase
+    .from("click_events")
+    .select("id, look_id")
+    .in("id", clickIds);
+
+  const clickToLook = new Map<string, string>();
+  for (const c of (clicks ?? []) as Array<{ id: string; look_id: string | null }>) {
+    if (c.look_id) clickToLook.set(c.id, c.look_id);
+  }
+
+  const out: Record<string, { earnings: number; commissionCount: number }> = {};
+  for (const r of rows) {
+    if (!r.click_event_id) continue;
+    const lookId = clickToLook.get(r.click_event_id);
+    if (!lookId) continue;
+    const amount = Number.parseFloat(
+      (r.creator_share || r.commission_total || "0") as string,
+    );
+    if (Number.isNaN(amount)) continue;
+    const existing = out[lookId] ?? { earnings: 0, commissionCount: 0 };
+    out[lookId] = {
+      earnings: existing.earnings + amount,
+      commissionCount: existing.commissionCount + 1,
+    };
+  }
+  return out;
+}
+
 export async function fetchTopLooksByEarnings(
   limit = 5,
 ): Promise<Array<{ lookId: string; title: string; coverPhotoUrl: string | null; total: number; count: number }>> {

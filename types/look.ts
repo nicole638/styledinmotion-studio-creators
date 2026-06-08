@@ -18,6 +18,12 @@ export interface Look {
   status: LookStatus;
   itemCount: number;
   clicks: number;
+  /** Sum of `creator_share` across confirmed + paid commissions on this look.
+   * Populated by fetchLooks via fetchEarningsByLookMap. Undefined when the
+   * caller hasn't asked for earnings (keeps lighter fetches cheap). */
+  earningsUsd?: number;
+  /** Distinct commission count contributing to earningsUsd. */
+  commissionCount?: number;
   createdAt: string;
   publishedAt: string | null;
   updatedAt: string | null;

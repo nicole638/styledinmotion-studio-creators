@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { MousePointerClick, DollarSign } from "lucide-react";
 import { type Look, formatLookDate } from "@/types/look";
 import { ShareLookButton } from "./ShareLookButton";
 
@@ -59,6 +60,29 @@ export function LookCard({ look }: Props) {
                 : formatLookDate(look.publishedAt)}
           </span>
         </div>
+        {/* Performance row — clicks + $ earned. Only meaningful for published
+            looks; drafts have nothing to measure yet. The $ slot stays hidden
+            when there are zero commissions so we don't render an empty "$0.00"
+            on every just-published look. */}
+        {look.status === "published" ? (
+          <div className="mt-2 pt-2 border-t border-border flex items-center gap-3 text-[11px] text-muted">
+            <span className="inline-flex items-center gap-1">
+              <MousePointerClick size={12} strokeWidth={2} />
+              <span className="tabular-nums">
+                {look.clicks.toLocaleString()}
+              </span>
+              <span className="hidden sm:inline">
+                {look.clicks === 1 ? "click" : "clicks"}
+              </span>
+            </span>
+            {look.earningsUsd && look.earningsUsd > 0 ? (
+              <span className="inline-flex items-center gap-0.5 text-rose font-medium tabular-nums">
+                <DollarSign size={12} strokeWidth={2} />
+                {look.earningsUsd.toFixed(2)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </Link>
   );

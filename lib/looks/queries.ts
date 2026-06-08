@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { fetchEarningsByLookMap } from "@/lib/earnings/queries";
 import {
   type Look,
   type LookRow,
@@ -55,7 +56,14 @@ export async function fetchLooks(
     query = query.or(`title.ilike.%${term}%,caption.ilike.%${term}%`);
   }
 
-  const { data, error } = await query;
+  // Run the looks query in parallel with the earnings-by-look rollup so the
+  // grid doesn't pay for a sequential second round-trip. Earnings lookup is
+  // a small two-step (commissions → click_events) keyed by creator_id; safe
+  // to run unconditionally because both calls are cheap and per-creator.
+  const [{ data, error }, earningsMap] = await Promise.all([
+    query,
+    fetchEarningsByLookMap(),
+  ]);
   if (error) {
     console.warn("[looks] fetchLooks error:", error.message);
     return [];
@@ -69,7 +77,13 @@ export async function fetchLooks(
       Array.isArray(row.look_items) && row.look_items[0]
         ? row.look_items[0].count
         : 0;
-    return rowToLook(row, itemCount);
+    const look = rowToLook(row, itemCount);
+    const earnings = earningsMap[row.id];
+    if (earnings) {
+      look.earningsUsd = earnings.earnings;
+      look.commissionCount = earnings.commissionCount;
+    }
+    return look;
   });
 }
 

@@ -6,6 +6,7 @@ import {
   fetchEarningsSummary,
   fetchRecentCommissions,
   fetchTopLooksByEarnings,
+  fetchLookPerformance,
 } from "@/lib/earnings/queries";
 import {
   formatMoney,
@@ -23,18 +24,20 @@ export default async function EarningsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [summary, recent, topLooks, { data: profile }] = await Promise.all([
-    fetchEarningsSummary(),
-    fetchRecentCommissions(25),
-    fetchTopLooksByEarnings(5),
-    // Fetch payout_email so we can surface a nudge banner when commissions
-    // exist but no payment method is set — same UX as iOS dashboard banner.
-    supabase
-      .from("creator_profiles")
-      .select("payout_email")
-      .eq("creator_id", user.id)
-      .maybeSingle(),
-  ]);
+  const [summary, recent, topLooks, lookPerf, { data: profile }] =
+    await Promise.all([
+      fetchEarningsSummary(),
+      fetchRecentCommissions(25),
+      fetchTopLooksByEarnings(5),
+      fetchLookPerformance(),
+      // Fetch payout_email so we can surface a nudge banner when commissions
+      // exist but no payment method is set — same UX as iOS dashboard banner.
+      supabase
+        .from("creator_profiles")
+        .select("payout_email")
+        .eq("creator_id", user.id)
+        .maybeSingle(),
+    ]);
 
   const hasCommissions =
     summary.countsByStatus.pending +
@@ -230,6 +233,88 @@ export default async function EarningsPage() {
                   </li>
                 ))}
               </ul>
+            </section>
+          ) : null}
+
+          {/* Per-look performance table — every published look with its
+              clicks + earnings + commission count. Ordered by clicks desc
+              server-side; visually highlights the $/click ratio so creators
+              can spot looks that need a stronger CTA. */}
+          {lookPerf.length > 0 ? (
+            <section className="mt-12">
+              <h2 className="font-display text-2xl">Performance by look</h2>
+              <p className="mt-1 text-sm text-muted">
+                Every published look you have, ranked by total clicks.
+                $/click is gross commission earned per click event — useful
+                for spotting low-converting items.
+              </p>
+              <div className="mt-5 rounded-2xl border border-border bg-card overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-bg/60 border-b border-border">
+                    <tr className="text-left text-xs uppercase tracking-wider text-muted">
+                      <th className="px-4 py-3 w-12"></th>
+                      <th className="px-4 py-3">Look</th>
+                      <th className="px-4 py-3 text-right">Pieces</th>
+                      <th className="px-4 py-3 text-right">Clicks</th>
+                      <th className="px-4 py-3 text-right">Sales</th>
+                      <th className="px-4 py-3 text-right">$ Earned</th>
+                      <th className="px-4 py-3 text-right">$/click</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lookPerf.map((row) => {
+                      const dollarsPerClick =
+                        row.clicks > 0 ? row.earnings / row.clicks : 0;
+                      return (
+                        <tr
+                          key={row.lookId}
+                          className="border-b border-border last:border-b-0 hover:bg-bg/30 transition-colors"
+                        >
+                          <td className="px-4 py-3">
+                            <div className="w-10 h-12 rounded-md bg-bg overflow-hidden">
+                              {row.coverPhotoUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={row.coverPhotoUrl}
+                                  alt={row.title}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Link
+                              href={`/looks/${row.lookId}`}
+                              className="font-medium hover:text-rose"
+                            >
+                              {row.title}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-muted">
+                            {row.itemCount}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {row.clicks.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-muted">
+                            {row.commissionCount}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums font-medium">
+                            {row.earnings > 0
+                              ? formatMoney(row.earnings)
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums text-muted">
+                            {dollarsPerClick > 0
+                              ? `$${dollarsPerClick.toFixed(2)}`
+                              : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </section>
           ) : null}
 
