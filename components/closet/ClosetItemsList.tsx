@@ -41,6 +41,9 @@ export function ClosetItemsList({
   const [consigningIds, setConsigningIds] = useState<Set<string>>(
     () => new Set(openConsignmentItemIds),
   );
+  // Consign pill opens a minimal modal whose ONLY content is the "I own
+  // this item" checkbox + a "Continue to The RealReal" CTA. Everything
+  // else — pickup, authentication, payout — happens on TRR's LP.
   const [consignModalItem, setConsignModalItem] = useState<ClosetItem | null>(
     null,
   );
@@ -159,15 +162,16 @@ export function ClosetItemsList({
         <ConsignmentModal
           item={consignModalItem}
           onClose={() => setConsignModalItem(null)}
-          onSubmitted={() => {
-            // Mark this item as consigning so the pill swaps to the
-            // ✓ state immediately, then stay on the success screen
-            // until the user closes the modal themselves.
+          onConsigned={() => {
+            // Creator confirmed ownership and tapped through to TRR.
+            // Flip the card pill to ✓ and close the modal — the rest of
+            // the flow lives on TRR's LP.
             setConsigningIds((prev) => {
               const next = new Set(prev);
               next.add(consignModalItem.id);
               return next;
             });
+            setConsignModalItem(null);
           }}
         />
       ) : null}

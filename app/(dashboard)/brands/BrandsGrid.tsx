@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -84,28 +84,43 @@ function BrandCard({ merchant }: { merchant: Merchant }) {
     merchant.commissionMax,
   );
   const productCount = merchant.feedLastProductCount;
+  // Track whether the <Image> failed so we can fall back to the gradient
+  // initial when the upstream logo URL 404s (Awin merchant deletions, dead
+  // favicons, etc.). Logo-less brands skip the <Image> entirely and render
+  // the fallback on first paint.
+  const [logoFailed, setLogoFailed] = useState(false);
+  const showFallback = !merchant.logoUrl || logoFailed;
 
   return (
     <Link
       href={`/brands/${merchant.id}`}
       className="group block rounded-2xl border border-border bg-card hover:border-rose transition-colors overflow-hidden"
     >
-      <div className="aspect-square bg-bg flex items-center justify-center p-6">
-        {merchant.logoUrl ? (
-          <Image
-            src={merchant.logoUrl}
-            alt={merchant.merchantName}
-            width={180}
-            height={180}
-            className="max-w-full max-h-full object-contain"
-            unoptimized
-          />
+      <div className="aspect-square flex items-center justify-center p-6 relative">
+        {showFallback ? (
+          <BrandFallback name={merchant.merchantName} />
         ) : (
-          <div className="text-center">
-            <p className="font-display text-2xl text-text">
-              {merchant.merchantName}
-            </p>
-          </div>
+          <>
+            {/* Subtle gradient backdrop so favicons/wordmarks sit on a
+                consistent surface instead of stark white. */}
+            <div
+              aria-hidden
+              className="absolute inset-0"
+              style={{
+                background: gradientForName(merchant.merchantName).bg,
+                opacity: 0.18,
+              }}
+            />
+            <Image
+              src={merchant.logoUrl!}
+              alt={merchant.merchantName}
+              width={180}
+              height={180}
+              className="relative max-w-full max-h-full object-contain"
+              unoptimized
+              onError={() => setLogoFailed(true)}
+            />
+          </>
         )}
       </div>
       <div className="px-4 py-3 border-t border-border">
@@ -125,6 +140,57 @@ function BrandCard({ merchant }: { merchant: Merchant }) {
       </div>
     </Link>
   );
+}
+
+/**
+ * Deterministic gradient + display-font initial fallback. Used when a
+ * brand has no logo_url (the source table is sparse for newly-onboarded
+ * CJ merchants where neither Awin's hosted logos nor a manual upload
+ * exists) OR when the logo URL fails to load at runtime.
+ *
+ * The gradient is picked deterministically from the brand name hash so
+ * the same brand always gets the same color — visual continuity across
+ * sessions/devices.
+ */
+function BrandFallback({ name }: { name: string }) {
+  const { bg, fg } = useMemo(() => gradientForName(name), [name]);
+  const initial = (name?.trim()?.[0] ?? "?").toUpperCase();
+  return (
+    <div
+      className="absolute inset-0 flex items-center justify-center"
+      style={{ background: bg }}
+    >
+      <span
+        className="font-display text-7xl leading-none"
+        style={{ color: fg }}
+      >
+        {initial}
+      </span>
+    </div>
+  );
+}
+
+// Seven complementary gradient pairs in the SiM rose/cream palette range.
+// Foreground (fg) is the initial color — high contrast against bg.
+const GRADIENTS: Array<{ bg: string; fg: string }> = [
+  { bg: "linear-gradient(135deg, #fde8e8 0%, #f5b7b1 100%)", fg: "#7a2a3a" },
+  { bg: "linear-gradient(135deg, #fef3c7 0%, #fbbf77 100%)", fg: "#7c4a14" },
+  { bg: "linear-gradient(135deg, #e0e7ff 0%, #a5b4fc 100%)", fg: "#312e81" },
+  { bg: "linear-gradient(135deg, #ecfdf5 0%, #6ee7b7 100%)", fg: "#065f46" },
+  { bg: "linear-gradient(135deg, #fdf2f8 0%, #f9a8d4 100%)", fg: "#831843" },
+  { bg: "linear-gradient(135deg, #f5f5f4 0%, #d6d3d1 100%)", fg: "#44403c" },
+  { bg: "linear-gradient(135deg, #ede9fe 0%, #c4b5fd 100%)", fg: "#4c1d95" },
+];
+
+function gradientForName(name: string): { bg: string; fg: string } {
+  // djb2-style hash — fast, stable, no deps. Just need stable bucketing.
+  let h = 5381;
+  const s = name ?? "";
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 33) ^ s.charCodeAt(i);
+  }
+  const idx = Math.abs(h) % GRADIENTS.length;
+  return GRADIENTS[idx];
 }
 
 function formatCommissionRange(

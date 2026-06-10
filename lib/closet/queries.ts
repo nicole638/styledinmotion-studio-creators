@@ -6,7 +6,7 @@ import {
 } from "@/types/closet";
 
 const ITEM_COLUMNS =
-  "id, name, brand, category, price, url, affiliate_url, photo_url, cutout_photo_url, original_photo_url, candidate_photo_urls, archived, default_worn_size, created_at, fetch_status, fetch_error";
+  "id, name, brand, category, price, url, affiliate_url, photo_url, cutout_photo_url, original_photo_url, candidate_photo_urls, archived, default_worn_size, created_at, fetch_status, fetch_error, trr_eligible";
 
 export interface FetchClosetOptions {
   archivedOnly?: boolean;

@@ -30,12 +30,13 @@ export function ItemCard({ item, isConsigning, onConsignTap }: Props) {
   const isFailed = item.fetchStatus === "failed";
   const isPartial = item.fetchStatus === "partial";
 
-  // Eligibility for the Consign affordance: luxury brand + $200+ price.
-  // Pending/failed items skip the check — no need to surface a consign
-  // CTA before the metadata has even landed.
+  // Eligibility for the Consign affordance: item.trrEligible is computed
+  // server-side by a trigger that matches against the trr_accepted_brands
+  // list. Pending/failed items skip the check — no need to surface a
+  // consign CTA before the metadata has even landed.
   const elig =
     !isPending && !isFailed
-      ? consignEligibility(item.brand, item.category, item.price)
+      ? consignEligibility(item.trrEligible, item.category, item.price)
       : { eligible: false, payoutMinUsd: null, payoutMaxUsd: null };
 
   const showConsignPill = elig.eligible && !!onConsignTap;

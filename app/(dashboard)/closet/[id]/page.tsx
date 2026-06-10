@@ -15,7 +15,7 @@ export const metadata = { title: "Edit piece" };
 // flow through rowToClosetItem cleanly. Pre-pipeline rows have NULL
 // fetch_status which the type helper coerces to 'complete'.
 const COLUMNS =
-  "id, name, brand, category, price, url, affiliate_url, photo_url, cutout_photo_url, original_photo_url, candidate_photo_urls, archived, default_worn_size, created_at, fetch_status, fetch_error";
+  "id, name, brand, category, price, url, affiliate_url, photo_url, cutout_photo_url, original_photo_url, candidate_photo_urls, archived, default_worn_size, created_at, fetch_status, fetch_error, trr_eligible";
 
 export default async function ClosetItemEditPage({
   params,

@@ -13,28 +13,45 @@ export interface SubmitConsignmentResult {
   payoutMaxUsd?: number | null;
 }
 
+export interface SubmitConsignmentInput {
+  itemId: string;
+  /**
+   * Required true: creator explicitly confirmed they physically own this
+   * item. Because closet items can be pulled from the brand catalog (=
+   * styled but not actually owned), the modal MUST present a checkbox
+   * and the server MUST refuse submission unless this is true.
+   */
+  ownsItem: boolean;
+}
+
 /**
  * Submit a consignment request for one of the creator's closet items.
  *
- * MVP scope (TRR partnership demo):
- *   - Validates the item belongs to the calling creator (RLS would
- *     enforce this anyway, but the explicit check gives a clean error)
- *   - Snapshots the item's name/brand/photo/price so future closet
- *     edits don't change what the creator submitted
- *   - Computes the payout estimate range via consignEligibility() —
- *     same values shown in the modal
- *   - Inserts into consignment_requests
- *   - Fires a Resend email to nicole@styledinmotion.app so she sees
- *     the request land in real-time (the demo magic moment)
+ * Gates (v2):
+ *   - Item belongs to caller (RLS enforces; explicit check for clean error)
+ *   - Item.brand passes the TRR-accepted brand list (server-side check
+ *     via creator_items.trr_eligible, computed by trigger)
+ *   - Creator confirmed ownership (`ownsItem === true`) — required because
+ *     items in the closet can be pulled from brand catalog and don't
+ *     imply physical ownership
  *
- * NOT included today: TRR API submission. We'll wire that once the
- * partnership is live and TRR gives us their intake endpoint.
+ * Snapshots item metadata + payout estimate into consignment_requests
+ * and emails nicole@styledinmotion.app so she sees requests land live.
  */
 export async function submitConsignmentRequestAction(
-  itemId: string,
+  input: SubmitConsignmentInput,
 ): Promise<SubmitConsignmentResult> {
+  const { itemId, ownsItem } = input;
   if (!itemId?.trim()) {
     return { ok: false, error: "Missing item id." };
+  }
+  if (!ownsItem) {
+    return {
+      ok: false,
+      error:
+        "Please confirm you own this item before consigning. " +
+        "Items pulled from a brand catalog can't be consigned through TRR.",
+    };
   }
 
   const supabase = createClient();
@@ -47,7 +64,7 @@ export async function submitConsignmentRequestAction(
   // cross-creator read, but checking explicitly gives a friendlier error.
   const { data: item, error: itemErr } = await supabase
     .from("creator_items")
-    .select("id, creator_id, name, brand, photo_url, price, category, url")
+    .select("id, creator_id, name, brand, photo_url, price, category, url, trr_eligible")
     .eq("id", itemId)
     .maybeSingle();
 
@@ -57,16 +74,19 @@ export async function submitConsignmentRequestAction(
     return { ok: false, error: "This isn't your item to consign." };
   }
 
-  // Compute payout estimate from the same eligibility helper the closet
-  // card and modal use, so the DB row matches what the user just saw.
-  const elig = consignEligibility(item.brand, item.category, item.price);
-  if (!elig.eligible) {
+  // Server-side re-check of brand eligibility (trigger keeps this column
+  // in sync with the trr_accepted_brands list).
+  if (!item.trr_eligible) {
     return {
       ok: false,
       error:
-        "This item isn't eligible for consignment yet (luxury brand + $200+ list price).",
+        "TheRealReal isn't currently accepting this brand for consignment. " +
+        "If you think that's a mistake, email support@styledinmotion.app.",
     };
   }
+
+  // Compute payout estimate (price-only — brand gate already passed).
+  const elig = consignEligibility(true, item.category, item.price);
 
   const { data: inserted, error: insErr } = await supabase
     .from("consignment_requests")
@@ -81,6 +101,7 @@ export async function submitConsignmentRequestAction(
       item_price: item.price,
       payout_min_usd: elig.payoutMinUsd,
       payout_max_usd: elig.payoutMaxUsd,
+      creator_confirmed_owns: true,
     })
     .select("id")
     .single();

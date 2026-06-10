@@ -1,62 +1,25 @@
 /**
  * Eligibility + payout estimation for the "Consign with The RealReal"
- * affordance on closet items. v1 is intentionally narrow: a curated
- * luxury brand list + a price floor. Items outside this scope simply
- * don't show the badge — keeps the closet from getting noisy and avoids
- * setting expectations TRR couldn't fulfill.
+ * affordance on closet items.
  *
- * Payout estimates are heuristic, NOT real TRR numbers. They're tuned
- * to be conservative-but-aspirational so the modal feels real without
- * promising specific dollar amounts. Once we have a real TRR API or
- * payout calculator, swap this for their authoritative values.
+ * v2 (2026-05-31): replaced the hardcoded luxury-brand list + $200 price
+ * gate with the TRR-approved brand list (~900 brands in
+ * `trr_accepted_brands`). The gate is now PURE BRAND (+ optional
+ * category restriction per brand). Price no longer matters — TheRealReal
+ * accepts these brands across the full price range.
+ *
+ * Two surfaces consume this module:
+ *   - Closet card (`ClosetItemsList`) — reads `item.trrEligible` (boolean
+ *     computed by a Postgres trigger on creator_items) to decide
+ *     whether to show the Consign pill. Cheap; no extra round-trip.
+ *   - Consignment modal — calls `resolveTrrBrandAction` to surface
+ *     restriction text ("TRR accepts this brand for: Coats, Dresses")
+ *     and computes payout estimates.
+ *
+ * Payout estimates are heuristic, NOT real TRR numbers. They model
+ * 45-65% recovery on `price`, adjusted per category. Once TRR exposes
+ * a payout calculator API we swap for authoritative values.
  */
-
-/** Luxury brands TRR routinely accepts for consignment. Match is
- *  case-insensitive and substring — `gucci` matches `Gucci`, `GUCCI`,
- *  `Gucci Marmont`, etc. */
-const LUXURY_BRANDS = [
-  "chanel",
-  "louis vuitton",
-  "lv ",
-  "hermès",
-  "hermes",
-  "gucci",
-  "prada",
-  "bottega veneta",
-  "bottega",
-  "dior",
-  "saint laurent",
-  "ysl",
-  "fendi",
-  "balenciaga",
-  "céline",
-  "celine",
-  "givenchy",
-  "loewe",
-  "valentino",
-  "miu miu",
-  "alexander mcqueen",
-  "burberry",
-  "cartier",
-  "tiffany",
-  "van cleef",
-  "rolex",
-  "patek philippe",
-  "audemars",
-  "the row",
-  "khaite",
-  "max mara",
-  "moncler",
-  "stella mccartney",
-  "isabel marant",
-  "jacquemus",
-  "off-white",
-  "off white",
-];
-
-/** Items under this list price aren't worth consigning through TRR (their
- *  intake bar is roughly $100 retail; we set $200 to filter casual finds). */
-const MIN_PRICE_USD = 200;
 
 const MONEY_RE = /(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/;
 
@@ -68,46 +31,38 @@ function parsePrice(raw: string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function isLuxuryBrand(brand: string | null | undefined): boolean {
-  if (!brand) return false;
-  const lower = brand.toLowerCase();
-  return LUXURY_BRANDS.some((b) => lower.includes(b));
-}
-
 export interface ConsignEligibility {
-  /** Whether the Consign affordance should render on the closet card. */
+  /** Whether the Consign affordance should render. Mirror of item.trrEligible. */
   eligible: boolean;
-  /** When eligible, a min/max payout estimate to show in the modal. */
+  /** Payout estimate range (NULL when no price is set — we can still consign,
+   *  the modal just shows "—" until the creator adds a price). */
   payoutMinUsd: number | null;
   payoutMaxUsd: number | null;
 }
 
 /**
- * Decide whether a closet item should surface the Consign pill, and
- * compute the payout estimate range we'll show in the modal if so.
- *
- * Heuristic: TRR consignor payout rates are typically 50-85% of the
- * listed resale value, depending on category, condition, and brand
- * tier. We model that as a flat 50-65% range applied to the creator's
- * `price` field (which is the merchant retail price — TRR's listing
- * would be lower, so this skews conservative).
+ * Compute payout estimate range for an item. `trrEligible` comes from the
+ * server-side trigger; this helper only handles the price math + category
+ * recovery heuristic. If the item isn't TRR-eligible, returns false fast.
  */
 export function consignEligibility(
-  brand: string | null | undefined,
+  trrEligible: boolean,
   category: string | null | undefined,
   priceText: string | null | undefined,
 ): ConsignEligibility {
-  const price = parsePrice(priceText);
-  if (!price || price < MIN_PRICE_USD) {
-    return { eligible: false, payoutMinUsd: null, payoutMaxUsd: null };
-  }
-  if (!isLuxuryBrand(brand)) {
+  if (!trrEligible) {
     return { eligible: false, payoutMinUsd: null, payoutMaxUsd: null };
   }
 
+  const price = parsePrice(priceText);
+  if (!price) {
+    // Brand is eligible but we don't have a price to estimate against.
+    // The Consign button still appears; modal shows "—" for the range.
+    return { eligible: true, payoutMinUsd: null, payoutMaxUsd: null };
+  }
+
   // Bag / outerwear / fine jewelry skew higher recovery; clothing skews
-  // lower. We approximate via category text — exact match isn't required,
-  // a casual contains() is fine for the demo's purposes.
+  // lower. Approximate via category text — exact match isn't required.
   const cat = (category ?? "").toLowerCase();
   let lowRatio = 0.45;
   let highRatio = 0.65;

@@ -48,6 +48,12 @@ export interface ClosetItem {
   createdAt: string;
   fetchStatus: FetchStatus;
   fetchError: string | null;
+  /**
+   * Whether this item's brand + category passes TheRealReal's consignment
+   * intake (per `trr_accepted_brands`). Populated by a Postgres trigger
+   * on insert/update. The Consign pill renders when true.
+   */
+  trrEligible: boolean;
 }
 
 /** Raw Supabase row shape (snake_case). Internal — don't export from app code. */
@@ -68,6 +74,7 @@ export interface ClosetItemRow {
   created_at: string;
   fetch_status: FetchStatus | null;
   fetch_error: string | null;
+  trr_eligible: boolean | null;
 }
 
 export function rowToClosetItem(row: ClosetItemRow): ClosetItem {
@@ -89,6 +96,7 @@ export function rowToClosetItem(row: ClosetItemRow): ClosetItem {
     // so legacy items don't suddenly render as "Fetching…" placeholders.
     fetchStatus: (row.fetch_status ?? "complete") as FetchStatus,
     fetchError: row.fetch_error,
+    trrEligible: row.trr_eligible ?? false,
   };
 }
 
