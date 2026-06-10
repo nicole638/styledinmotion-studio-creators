@@ -67,7 +67,18 @@ export function ConsignmentModal({ item, onClose, onConsigned }: Props) {
     onConsigned();
   };
 
-  const display = item.name ?? "this piece";
+  // De-dupe brand prefix: scraped product names from luxury merchants almost
+  // always already include the brand at the start (e.g. name="Prada Arque
+  // Printed Leather Mini Shoulder Bag", brand="Prada" → don't prepend or we
+  // get "Prada Prada Arque…"). Case-insensitive prefix check.
+  const rawName = item.name ?? "this piece";
+  const brandPrefix = item.brand?.trim() ?? "";
+  const nameStartsWithBrand =
+    brandPrefix.length > 0 &&
+    rawName.trim().toLowerCase().startsWith(brandPrefix.toLowerCase());
+  const heading = nameStartsWithBrand || !brandPrefix
+    ? rawName
+    : `${brandPrefix} ${rawName}`;
 
   return (
     <div

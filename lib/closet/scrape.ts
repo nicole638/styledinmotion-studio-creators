@@ -40,6 +40,32 @@ export class ScrapeError extends Error {
 // NEXT_PUBLIC_BACKEND_URL (e.g. for staging or a self-hosted backend).
 const DEFAULT_BACKEND_URL = "https://meadow-grindstone.vibecode.run";
 
+// Bot-block / CAPTCHA interstitial titles. Merchants (observed: TikTok
+// Shop's "Security Check" slider CAPTCHA, 2026-06-06) sometimes serve a
+// bot-check page instead of the product page; the scrape then "succeeds"
+// with the block page title as the name and the CAPTCHA puzzle image as
+// the photo. Mirrors looksLikeBlockPage in supabase/functions/scrape-product.
+const BLOCK_PAGE_TITLE_RES: RegExp[] = [
+  /^\s*security check/i,
+  /^\s*access denied/i,
+  /^\s*access to this page has been denied/i,
+  /^\s*just a moment/i,
+  /^\s*attention required/i,
+  /^\s*pardon our interruption/i,
+  /^\s*robot or human/i,
+  /are you a (?:robot|human)/i,
+  /verify(?:ing)? you are (?:a )?human/i,
+  /\bcaptcha\b/i,
+  /^\s*request blocked/i,
+  /^\s*403 forbidden/i,
+];
+
+function looksLikeBlockPage(name: string | null, imageUrl: string | null): boolean {
+  if (name && BLOCK_PAGE_TITLE_RES.some((re) => re.test(name))) return true;
+  if (imageUrl && /captcha|securimage|botdetect/i.test(imageUrl)) return true;
+  return false;
+}
+
 export async function fetchProductInfo(url: string): Promise<ScrapedProduct> {
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? DEFAULT_BACKEND_URL;
 
@@ -92,6 +118,17 @@ export async function fetchProductInfo(url: string): Promise<ScrapedProduct> {
     : data.imageUrl
       ? [data.imageUrl]
       : [];
+
+  // Reject CAPTCHA/bot-block interstitials masquerading as products —
+  // otherwise the closet ends up with "Security Check" items whose photo
+  // is a literal CAPTCHA puzzle piece.
+  if (looksLikeBlockPage(data.name ?? null, data.imageUrl ?? imageUrls[0] ?? null)) {
+    throw new ScrapeError(
+      "Merchant blocked the scrape (CAPTCHA/security-check page)",
+      422,
+      `Page title: "${String(data.name ?? "unknown").slice(0, 100)}". Try again later or use the canonical product page URL.`,
+    );
+  }
 
   return {
     name: data.name ?? null,
