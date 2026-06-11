@@ -109,7 +109,7 @@ export function ConsignmentModal({ item, onClose, onConsigned }: Props) {
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={item.photoUrl}
-                alt={display}
+                alt={heading}
                 className="max-h-full max-w-full object-contain p-6"
               />
             ) : (
@@ -120,10 +120,10 @@ export function ConsignmentModal({ item, onClose, onConsigned }: Props) {
           </div>
 
           <div className="px-6 pt-6 pb-6">
-            {/* Brand + item name */}
+            {/* Brand + item name — `heading` already handles the brand
+                prefix (and de-dupes it), so render it alone. */}
             <h2 className="font-display text-2xl leading-tight">
-              {item.brand ? `${item.brand} ` : ""}
-              {display}
+              {heading}
             </h2>
 
             {/* First-time-consignor promo. Active for the Q3 push window
