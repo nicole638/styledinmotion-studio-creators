@@ -16,6 +16,11 @@ import {
 interface Props {
   /** looks.short_code — used to construct https://styled.in/<shortCode> */
   shortCode: string;
+  /** looks.id — used to build the canonical public web look URL for Pinterest
+   *  (https://shop.styledinmotion.studio/look/<lookId>). Pinterest pins must
+   *  link to the web page (which renders in any browser); the app short link
+   *  hands off to the iOS app and dead-ends when the app isn't installed. */
+  lookId: string;
   /** Display title — shown in shared text + used as filename for IG/TikTok cover download */
   title: string;
   /** Cover photo URL (flattened PNG for collages, photo for regular looks). Required
@@ -48,12 +53,16 @@ type Status =
  * Closes on outside click or Escape. Status toast slides into the trigger button
  * for ~2s after each action so the creator gets feedback without a modal.
  */
-export function ShareLookMenu({ shortCode, title, coverPhotoUrl }: Props) {
+export function ShareLookMenu({ shortCode, lookId, title, coverPhotoUrl }: Props) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const menuRef = useRef<HTMLDivElement>(null);
 
   const lookUrl = `https://styled.in/${shortCode}`;
+  // Pinterest must link to the public web page so the pin opens in a browser.
+  // The styled.in short link hands off to the iOS app and won't launch from a
+  // pin when the app isn't installed, so Pinterest gets the direct web URL.
+  const pinterestUrl = `https://shop.styledinmotion.studio/look/${lookId}`;
   const shareTitle = title || "Styled in Motion — Shop the look";
   const shareText = `Shop the look: ${shareTitle}`;
 
@@ -181,7 +190,7 @@ export function ShareLookMenu({ shortCode, title, coverPhotoUrl }: Props) {
 
   const sharePinterest = () => {
     const intent = new URL("https://www.pinterest.com/pin/create/button/");
-    intent.searchParams.set("url", lookUrl);
+    intent.searchParams.set("url", pinterestUrl);
     if (coverPhotoUrl) intent.searchParams.set("media", coverPhotoUrl);
     intent.searchParams.set("description", shareText);
     window.open(intent.toString(), "_blank", "noopener,noreferrer");

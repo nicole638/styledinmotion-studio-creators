@@ -94,6 +94,7 @@ export default async function EditLookPage({
           {lookStatus === "published" ? (
             <ShareLookMenu
               shortCode={look.short_code}
+              lookId={look.id}
               title={look.title || "Untitled collage"}
               coverPhotoUrl={look.cover_photo_url ?? null}
             />
@@ -170,6 +171,7 @@ export default async function EditLookPage({
         {lookStatus === "published" ? (
           <ShareLookMenu
             shortCode={look.short_code}
+            lookId={look.id}
             title={look.title || "Untitled look"}
             coverPhotoUrl={look.cover_photo_url ?? null}
           />

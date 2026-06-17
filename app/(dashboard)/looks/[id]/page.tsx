@@ -90,6 +90,7 @@ export default async function LookDetailPage({
           {look.status === "published" ? (
             <ShareLookMenu
               shortCode={look.shortCode}
+              lookId={look.id}
               title={look.title || "Untitled look"}
               coverPhotoUrl={look.coverPhotoUrl}
             />
