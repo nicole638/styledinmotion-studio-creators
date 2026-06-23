@@ -140,6 +140,15 @@ export type CampaignCandidateStatus =
   | "denied"
   | "expired";
 
+/** Learned guess at what a candidate is, from the words in its product name +
+ *  category overrides (pet → non_fashion; hats/bags/jewelry → accessory).
+ *  Improves as Nicole/Kerri approve/deny (see relearn_candidate_fashion()). */
+export type FashionPrediction =
+  | "fashion"
+  | "accessory"
+  | "non_fashion"
+  | "unsure";
+
 export interface CampaignCandidate {
   asin: string;
   productName: string | null;
@@ -152,6 +161,11 @@ export interface CampaignCandidate {
   category: string | null;
   subcategory: string | null;
   status: CampaignCandidateStatus;
+  /** + = leans fashion, − = leans non-fashion, ~0 = unsure. */
+  fashionScore: number | null;
+  predicted: FashionPrediction | null;
+  /** Color/size ASIN variants this product rolls up (approve covers all). */
+  variantCount: number;
   discoveredAt: string;
   lastSeenAt: string;
   reviewedBy: string | null;
@@ -171,6 +185,9 @@ export interface CampaignCandidateRow {
   category: string | null;
   subcategory: string | null;
   status: CampaignCandidateStatus;
+  fashion_score: string | number | null;
+  predicted: string | null;
+  variant_count: number | null;
   discovered_at: string;
   last_seen_at: string;
   reviewed_by: string | null;
@@ -196,6 +213,12 @@ export function rowToCandidate(
     category: row.category,
     subcategory: row.subcategory,
     status: row.status,
+    fashionScore:
+      row.fashion_score === null
+        ? null
+        : Number.parseFloat(String(row.fashion_score)),
+    predicted: (row.predicted as FashionPrediction | null) ?? null,
+    variantCount: Number(row.variant_count ?? 1),
     discoveredAt: row.discovered_at,
     lastSeenAt: row.last_seen_at,
     reviewedBy: row.reviewed_by,
