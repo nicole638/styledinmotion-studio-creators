@@ -7,6 +7,19 @@
 
 export type AffiliateNetwork = "awin" | "rakuten" | "cj";
 
+/**
+ * Active promo/coupon badge for a brand card, aggregated from awin_offers
+ * (auto-synced) + brand_offers (Rakuten/CJ/direct, from the daily email task).
+ */
+export interface MerchantPromo {
+  /** Coupon/voucher code to surface, if the top active offer has one. */
+  code: string | null;
+  /** Short badge label, e.g. "USE YOUGET20" or "2 deals". */
+  label: string;
+  /** Number of active offers for this merchant. */
+  count: number;
+}
+
 export interface Merchant {
   id: string;
   network: AffiliateNetwork;
@@ -23,6 +36,8 @@ export interface Merchant {
   /** Cached product-feed count from the last sync — surfaces "X items" on the brand card. */
   feedLastProductCount: number | null;
   feedLastSyncedAt: string | null;
+  /** Active promo/coupon badge (null when the brand has no live offer). */
+  promo?: MerchantPromo | null;
 }
 
 /**

@@ -137,6 +137,17 @@ function BrandCard({ merchant }: { merchant: Merchant }) {
             </p>
           ) : null}
         </div>
+        {merchant.promo ? (
+          <div className="mt-2">
+            <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-rose px-2.5 py-1 text-[11px] font-semibold text-white">
+              <span aria-hidden>🔥</span>
+              <span className="truncate">
+                {merchant.promo.label}
+                {merchant.promo.code ? " (live!)" : ""}
+              </span>
+            </span>
+          </div>
+        ) : null}
       </div>
     </Link>
   );

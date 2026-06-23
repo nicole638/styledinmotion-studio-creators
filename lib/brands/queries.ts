@@ -4,6 +4,7 @@ import type {
   BrandDepartment,
   BrandProduct,
   Merchant,
+  MerchantPromo,
 } from "@/types/brands";
 
 /**
@@ -39,7 +40,53 @@ export async function fetchMerchants(opts: {
   const { data, error } = await q;
   if (error) throw new Error(error.message);
 
-  return (data ?? []).map(rowToMerchant);
+  const merchants = (data ?? []).map(rowToMerchant);
+  // Attach active promo/coupon badges (awin_offers + brand_offers).
+  const promos = await fetchActiveOffersByMerchant(supabase);
+  for (const m of merchants) m.promo = promos.get(m.id) ?? null;
+  return merchants;
+}
+
+/**
+ * Active promo/coupon badges keyed by merchant id. Reads awin_offers
+ * (auto-synced) + brand_offers (Rakuten/CJ/direct, from the daily email
+ * enrichment); both join to affiliate_merchants by id. A voucher code wins
+ * the badge, otherwise a deal count. Mirrors the iOS Brands-tab badge. Both
+ * tables are small, so we pull all active rows and group in memory.
+ */
+async function fetchActiveOffersByMerchant(
+  supabase: ReturnType<typeof createClient>,
+): Promise<Map<string, MerchantPromo>> {
+  const ACTIVE = ["active", "expiringSoon"];
+  const sel = "merchant_id, voucher_code";
+  const [awin, brand] = await Promise.all([
+    supabase.from("awin_offers").select(sel).is("removed_at", null).in("status", ACTIVE),
+    supabase.from("brand_offers").select(sel).is("removed_at", null).in("status", ACTIVE),
+  ]);
+  if (awin.error) console.warn("[brands] awin_offers badge fetch:", awin.error.message);
+  if (brand.error) console.warn("[brands] brand_offers badge fetch:", brand.error.message);
+
+  const grouped = new Map<string, { codes: string[]; count: number }>();
+  for (const r of [...(awin.data ?? []), ...(brand.data ?? [])] as Array<{
+    merchant_id: string | null;
+    voucher_code: string | null;
+  }>) {
+    const mid = r.merchant_id;
+    if (!mid) continue;
+    const e = grouped.get(mid) ?? { codes: [], count: 0 };
+    e.count += 1;
+    const code = (r.voucher_code ?? "").trim();
+    if (code) e.codes.push(code);
+    grouped.set(mid, e);
+  }
+
+  const out = new Map<string, MerchantPromo>();
+  grouped.forEach((e, mid) => {
+    const code = e.codes[0] ?? null;
+    const label = code ? `USE ${code}` : e.count > 1 ? `${e.count} deals` : "Deal live";
+    out.set(mid, { code, label, count: e.count });
+  });
+  return out;
 }
 
 /** Single merchant lookup — used by /brands/[id] page header. */
@@ -121,7 +168,15 @@ export async function fetchBrandProducts(
 
   const search = (opts.search ?? "").trim();
   if (search.length > 0) {
-    q = q.ilike("name", `%${search}%`);
+    // Subcategory-driven search: match the product TYPE (merchant_category —
+    // e.g. "Dresses", "Sports Bras") first, then the product name. So a
+    // search for "bra" surfaces the whole Sports Bras subcategory, not just
+    // names that happen to contain the word. PostgREST .or() uses * as its
+    // wildcard; strip chars that would break the filter grammar.
+    const safe = search.replace(/[,()*]/g, " ").trim();
+    if (safe.length > 0) {
+      q = q.or(`merchant_category.ilike.*${safe}*,name.ilike.*${safe}*`);
+    }
   }
 
   const dept = (opts.department ?? "").trim();
