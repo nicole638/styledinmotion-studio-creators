@@ -127,3 +127,79 @@ export const CAMPAIGN_SOURCE_LABEL: Record<CampaignSource, string> = {
   awin: "Awin",
   manual: "Manual",
 };
+
+/* ───────────────────────── Campaign candidates ─────────────────────────
+ * Amazon-bonus-eligible products auto-discovered from PartnerBoost's
+ * `has_acc` feed, sitting in a review queue. Nicole/Kerri approve (→ creates
+ * a `campaigns` row) or deny. They still opt in on the Amazon side.
+ * ─────────────────────────────────────────────────────────────────────── */
+
+export type CampaignCandidateStatus =
+  | "pending"
+  | "approved"
+  | "denied"
+  | "expired";
+
+export interface CampaignCandidate {
+  asin: string;
+  productName: string | null;
+  brandName: string | null;
+  brandId: string | null;
+  commissionRatePct: number | null;
+  commissionRaw: string | null;
+  imageUrl: string | null;
+  productUrl: string | null;
+  category: string | null;
+  subcategory: string | null;
+  status: CampaignCandidateStatus;
+  discoveredAt: string;
+  lastSeenAt: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  campaignId: string | null;
+}
+
+export interface CampaignCandidateRow {
+  asin: string;
+  product_name: string | null;
+  brand_name: string | null;
+  brand_id: string | null;
+  commission_rate_pct: string | number | null;
+  commission_raw: string | null;
+  image_url: string | null;
+  product_url: string | null;
+  category: string | null;
+  subcategory: string | null;
+  status: CampaignCandidateStatus;
+  discovered_at: string;
+  last_seen_at: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  campaign_id: string | null;
+}
+
+export function rowToCandidate(
+  row: CampaignCandidateRow,
+): CampaignCandidate {
+  return {
+    asin: row.asin,
+    productName: row.product_name,
+    brandName: row.brand_name,
+    brandId: row.brand_id,
+    commissionRatePct:
+      row.commission_rate_pct === null
+        ? null
+        : Number.parseFloat(String(row.commission_rate_pct)),
+    commissionRaw: row.commission_raw,
+    imageUrl: row.image_url,
+    productUrl: row.product_url,
+    category: row.category,
+    subcategory: row.subcategory,
+    status: row.status,
+    discoveredAt: row.discovered_at,
+    lastSeenAt: row.last_seen_at,
+    reviewedBy: row.reviewed_by,
+    reviewedAt: row.reviewed_at,
+    campaignId: row.campaign_id,
+  };
+}

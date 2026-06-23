@@ -16,6 +16,7 @@ import {
   Sparkles,
   MousePointerClick,
   Building2,
+  Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -49,6 +50,12 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
     href: "/admin/campaigns",
     label: "Campaigns",
     icon: Megaphone,
+    status: "live",
+  },
+  {
+    href: "/admin/campaign-candidates",
+    label: "Campaign queue",
+    icon: Inbox,
     status: "live",
   },
   {
