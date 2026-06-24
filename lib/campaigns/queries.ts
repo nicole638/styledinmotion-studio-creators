@@ -4,14 +4,16 @@ import { rowToCampaign, type Campaign, type CampaignRow } from "@/types/campaign
 
 /**
  * List all campaigns (admin scope — includes archived + ended).
- * Sorted: active first, then upcoming, then ended, then archived.
- * Within each group, newest end_date first.
+ * Sorted: pinned first (newest pin first), then active / upcoming / ended /
+ * archived, and within each group newest end_date first. Pin a campaign by
+ * setting campaigns.pinned_at (used to surface freshly-added ones up top).
  */
 export async function listCampaignsForAdmin(): Promise<Campaign[]> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("campaigns")
     .select("*")
+    .order("pinned_at", { ascending: false, nullsFirst: false })
     .order("archived_at", { ascending: true, nullsFirst: true })
     .order("end_date", { ascending: false });
   if (error) throw new Error(`listCampaignsForAdmin: ${error.message}`);
