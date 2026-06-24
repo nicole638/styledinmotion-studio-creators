@@ -163,6 +163,10 @@ export async function fetchBrandProducts(
       { count: "exact" },
     )
     .eq("merchant_id", opts.merchantId)
+    // Clothing-first: apparel (rank 0) → footwear/bags/accessories (1) →
+    // jewelry (2) → uncategorized (3); newest within each band. Keeps the
+    // Amazon brand (43% jewelry) from opening on a wall of rings.
+    .order("department_rank", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false })
     .range(from, to);
 
