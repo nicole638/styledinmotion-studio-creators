@@ -34,7 +34,10 @@ export async function getCampaignById(id: string): Promise<Campaign | null> {
 /**
  * Currently-active campaigns visible to creators (today is in [start, end] window
  * AND not archived). RLS allows authenticated users SELECT on active campaigns.
- * Sorted: highest commission rate first, then earliest end_date (urgency surfaces).
+ * Sorted: highest commission rate first; within an equal rate, by category bucket
+ * (campaigns.category_priority: 0=clothing, 1=shoes, 2=jewelry, 3=other — computed
+ * server-side from infer_department, the same classifier as the Brands tab, and
+ * refreshed nightly); then earliest end_date (urgency). Mirrors the iOS home sort.
  */
 export async function listActiveCampaignsForCreator(
   limit = 10,
@@ -48,6 +51,7 @@ export async function listActiveCampaignsForCreator(
     .gte("end_date", today)
     .is("archived_at", null)
     .order("commission_rate_pct", { ascending: false })
+    .order("category_priority", { ascending: true, nullsFirst: false })
     .order("end_date", { ascending: true })
     .limit(limit);
   if (error) throw new Error(`listActiveCampaignsForCreator: ${error.message}`);
