@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Search, X } from "lucide-react";
 import Link from "next/link";
+import { CLOSET_CATEGORIES } from "@/lib/closet/categories";
 
 interface Props {
   initialSearch: string;
@@ -13,16 +14,14 @@ interface Props {
   archivedCount: number;
 }
 
-const CATEGORIES = [
-  "All",
-  "Top",
-  "Pants",
-  "Dress",
-  "Shoes",
-  "Bag",
-  "Jewelry",
-  "Accessory",
-  "Outerwear",
+// "All" + the shared taxonomy. label/value differ for "Dresses & Skirts"
+// (label shown, value 'Dress' stored/filtered).
+const CATEGORY_CHIPS: { label: string; value: string | null }[] = [
+  { label: "All", value: null },
+  ...CLOSET_CATEGORIES.map((c) => ({
+    label: c.label,
+    value: c.value as string | null,
+  })),
 ];
 
 export function ClosetToolbar({
@@ -100,7 +99,7 @@ export function ClosetToolbar({
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or brand"
+            placeholder="Search by name, brand, or category"
             className="w-full rounded-full border border-border bg-card pl-9 pr-9 py-2 text-sm outline-none focus:border-rose"
           />
           {search ? (
@@ -119,21 +118,20 @@ export function ClosetToolbar({
         </form>
 
         <div className="flex flex-wrap gap-1">
-          {CATEGORIES.map((cat) => {
-            const value = cat === "All" ? null : cat;
-            const active = (initialCategory || "All") === cat;
+          {CATEGORY_CHIPS.map((chip) => {
+            const active = (initialCategory || "") === (chip.value ?? "");
             return (
               <button
-                key={cat}
+                key={chip.label}
                 type="button"
-                onClick={() => updateParams({ category: value })}
+                onClick={() => updateParams({ category: chip.value })}
                 className={`px-3 py-1 rounded-full text-xs transition-colors ${
                   active
                     ? "bg-text text-white"
                     : "bg-card border border-border hover:border-rose"
                 }`}
               >
-                {cat}
+                {chip.label}
               </button>
             );
           })}

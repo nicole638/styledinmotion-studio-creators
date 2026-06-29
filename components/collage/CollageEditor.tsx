@@ -35,6 +35,7 @@ import { LayoutCarousel } from "./LayoutCarousel";
 import { renderCollageToPng } from "@/lib/collage/render";
 import { saveCollageAction } from "@/lib/collage/mutations";
 import type { ClosetItem } from "@/types/closet";
+import { CLOSET_CATEGORIES } from "@/lib/closet/categories";
 import { createClient } from "@/lib/supabase/client";
 
 interface InitialCollage {
@@ -90,6 +91,7 @@ export function CollageEditor({ creatorId, cutoutItems, initial }: Props) {
   const [layers, setLayers] = useState<Layer[]>(initial?.layout.layers ?? []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerCategory, setPickerCategory] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [busy, setBusy] = useState<"draft" | "publish" | null>(null);
@@ -104,15 +106,16 @@ export function CollageEditor({ creatorId, cutoutItems, initial }: Props) {
 
   const filteredCutouts = useMemo(() => {
     const q = pickerSearch.trim().toLowerCase();
-    if (!q) return cutoutItems;
     return cutoutItems.filter((it) => {
+      if (pickerCategory && it.category !== pickerCategory) return false;
+      if (!q) return true;
       const hay = [it.name, it.brand, it.category]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [cutoutItems, pickerSearch]);
+  }, [cutoutItems, pickerSearch, pickerCategory]);
 
   const cutoutLayerByItemId = useMemo(() => {
     const m = new Map<string, CutoutLayer>();
@@ -541,12 +544,42 @@ export function CollageEditor({ creatorId, cutoutItems, initial }: Props) {
                   type="search"
                   value={pickerSearch}
                   onChange={(e) => setPickerSearch(e.target.value)}
-                  placeholder="Search cutouts"
+                  placeholder="Search name, brand, category"
                   className="w-full rounded-full border border-border bg-card pl-9 pr-3 py-2 text-sm outline-none focus:border-rose"
                 />
               </div>
-              <ul className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[420px] overflow-y-auto">
-                {filteredCutouts.map((item) => {
+              <div className="flex flex-wrap gap-1 mb-3">
+                {[
+                  { label: "All", value: null as string | null },
+                  ...CLOSET_CATEGORIES.map((c) => ({
+                    label: c.label,
+                    value: c.value as string | null,
+                  })),
+                ].map((chip) => {
+                  const active = (pickerCategory ?? null) === chip.value;
+                  return (
+                    <button
+                      key={chip.label}
+                      type="button"
+                      onClick={() => setPickerCategory(chip.value)}
+                      className={`px-2.5 py-1 rounded-full text-[11px] transition-colors ${
+                        active
+                          ? "bg-text text-white"
+                          : "bg-card border border-border hover:border-rose"
+                      }`}
+                    >
+                      {chip.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {filteredCutouts.length === 0 ? (
+                <p className="text-sm text-muted px-1 py-3">
+                  No pieces match. Try another category or search.
+                </p>
+              ) : (
+                <ul className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[420px] overflow-y-auto">
+                  {filteredCutouts.map((item) => {
                   const picked = cutoutLayerByItemId.has(item.id);
                   const atMax = layers.length >= MAX_LAYERS && !picked;
                   return (
@@ -574,8 +607,9 @@ export function CollageEditor({ creatorId, cutoutItems, initial }: Props) {
                       </button>
                     </li>
                   );
-                })}
-              </ul>
+                  })}
+                </ul>
+              )}
             </>
           )}
         </div>

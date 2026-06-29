@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Search, X, GripVertical } from "lucide-react";
 import type { ClosetItem } from "@/types/closet";
 import type { ComposerItem } from "@/lib/looks/mutations";
+import { CLOSET_CATEGORIES } from "@/lib/closet/categories";
 
 interface Props {
   /** All non-archived closet items the creator can pick from. */
@@ -17,6 +18,7 @@ const MAX_PICKS = 12;
 
 export function ItemPicker({ closet, selected, onChange }: Props) {
   const [search, setSearch] = useState("");
+  const [category, setCategory] = useState<string | null>(null);
 
   const itemById = useMemo(() => {
     const m = new Map<string, ClosetItem>();
@@ -31,15 +33,16 @@ export function ItemPicker({ closet, selected, onChange }: Props) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return closet;
     return closet.filter((it) => {
+      if (category && it.category !== category) return false;
+      if (!q) return true;
       const hay = [it.name, it.brand, it.category]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [closet, search]);
+  }, [closet, search, category]);
 
   const handleAdd = (item: ClosetItem) => {
     if (selected.length >= MAX_PICKS) return;
@@ -186,6 +189,31 @@ export function ItemPicker({ closet, selected, onChange }: Props) {
             placeholder="Search by name, brand, category"
             className="w-full rounded-full border border-border bg-card pl-9 pr-3 py-2 text-sm outline-none focus:border-rose"
           />
+        </div>
+        <div className="flex flex-wrap gap-1 mb-3">
+          {[
+            { label: "All", value: null as string | null },
+            ...CLOSET_CATEGORIES.map((c) => ({
+              label: c.label,
+              value: c.value as string | null,
+            })),
+          ].map((chip) => {
+            const active = (category ?? null) === chip.value;
+            return (
+              <button
+                key={chip.label}
+                type="button"
+                onClick={() => setCategory(chip.value)}
+                className={`px-2.5 py-1 rounded-full text-[11px] transition-colors ${
+                  active
+                    ? "bg-text text-white"
+                    : "bg-card border border-border hover:border-rose"
+                }`}
+              >
+                {chip.label}
+              </button>
+            );
+          })}
         </div>
         {closet.length === 0 ? (
           <div className="rounded-2xl border border-border bg-card p-6 text-center">

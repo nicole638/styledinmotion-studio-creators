@@ -8,12 +8,14 @@
 export type Category =
   | "Top"
   | "Pants"
-  | "Dress"
+  | "Dress" // combined "Dresses & Skirts" bucket (skirts fold in here)
   | "Shoes"
   | "Bag"
   | "Jewelry"
   | "Accessory"
   | "Outerwear"
+  | "Intimates"
+  | "Swimwear"
   | "Other";
 
 /**

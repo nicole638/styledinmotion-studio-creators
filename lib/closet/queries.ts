@@ -43,8 +43,11 @@ export async function fetchClosetItems(
 
   if (options.search && options.search.trim()) {
     const term = options.search.trim().replace(/[%,]/g, "");
-    // ilike handles case-insensitive match on either name or brand
-    query = query.or(`name.ilike.%${term}%,brand.ilike.%${term}%`);
+    // Case-insensitive match on name, brand, OR category (so typing
+    // "swim", "alo", or "cap" all work). name/brand are gin_trgm-indexed.
+    query = query.or(
+      `name.ilike.%${term}%,brand.ilike.%${term}%,category.ilike.%${term}%`,
+    );
   }
 
   const { data, error } = await query;
