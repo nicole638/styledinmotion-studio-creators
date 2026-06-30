@@ -126,16 +126,36 @@ export function ClosetItemsList({
     };
   }, [creatorId, archivedView]);
 
-  // Stable order: pending and failed at top (so users see them immediately),
-  // then everything else by created_at desc (which is how the server returned).
+  // Order: pending + failed pinned to top (so a just-added item stays visible
+  // while it scrapes — this component prepends realtime INSERTs), then the
+  // settled items grouped by category — Top, Pants, Dress, … — newest first
+  // within each group. Mirrors the iOS Studio closet grouping. Groups on the
+  // `category` field (creator_items.sort_order is uniformly 0, not a usable
+  // order); unknown/null categories sort after Other rather than disappearing.
   const ordered = useMemo(() => {
-    const priority = (s: ClosetItem["fetchStatus"]) =>
+    const CATEGORY_ORDER: Record<string, number> = {
+      Top: 0,
+      Pants: 1,
+      Dress: 2,
+      Shoes: 3,
+      Bag: 4,
+      Jewelry: 5,
+      Accessory: 6,
+      Outerwear: 7,
+      Intimates: 8,
+      Swimwear: 9,
+      Other: 10,
+    };
+    const fetchRank = (s: ClosetItem["fetchStatus"]) =>
       s === "pending" ? 0 : s === "failed" ? 1 : 2;
+    const catRank = (c: ClosetItem["category"]) =>
+      c && c in CATEGORY_ORDER ? CATEGORY_ORDER[c] : 99;
     return items.slice().sort((a, b) => {
-      const pa = priority(a.fetchStatus);
-      const pb = priority(b.fetchStatus);
-      if (pa !== pb) return pa - pb;
-      // Within a priority bucket, keep created_at DESC.
+      const fr = fetchRank(a.fetchStatus) - fetchRank(b.fetchStatus);
+      if (fr !== 0) return fr;
+      const cr = catRank(a.category) - catRank(b.category);
+      if (cr !== 0) return cr;
+      // Newest first within a category.
       return b.createdAt.localeCompare(a.createdAt);
     });
   }, [items]);
