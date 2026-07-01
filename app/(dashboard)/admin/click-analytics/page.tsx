@@ -59,8 +59,10 @@ export default async function AdminClickAnalyticsPage() {
         Every row in <code className="text-text">click_events</code> over the
         last 30 days, sliced six ways. Use the Suspected logging gaps section
         to spot merchants whose catalog is live but whose clicks aren&apos;t
-        being captured — the most likely cause is a write path that bypasses{" "}
-        <code className="text-text">/api/shop</code> on the website.
+        being captured. Every network now routes through{" "}
+        <code className="text-text">/api/shop</code>, so a real gap is a brand
+        that&apos;s actually in creators&apos; closets yet still shows zero —
+        most zeros just mean nobody&apos;s surfaced the catalog yet.
       </p>
 
       {/* Top-line totals */}
@@ -137,17 +139,19 @@ export default async function AdminClickAnalyticsPage() {
         </h2>
         <p className="text-sm text-muted mb-4 max-w-prose">
           Active merchants with a populated catalog but{" "}
-          <strong>zero clicks in 30 days</strong>. Could mean nobody&apos;s
-          surfaced the brand yet — or that web clicks are silently being
-          dropped. CJ rows are <em>expected</em> to be 0 until{" "}
-          <code className="text-text">/api/shop</code> stops bypassing
-          kqzyfj.com URLs.
+          <strong>zero clicks in 30 days</strong>. Usually this just means the
+          catalog is live but nobody&apos;s added it to a look yet — not a
+          logging bug. CJ and Rakuten clicks route through{" "}
+          <code className="text-text">/api/shop</code> and log correctly as of
+          late June 2026. Only worth a look when a brand you know is surfaced
+          shows zero.
         </p>
         {cjGaps.length > 0 && (
-          <div className="mb-6 rounded-2xl border border-rose/30 bg-rose/5 p-4">
-            <p className="text-sm font-medium text-rose">
-              {cjGaps.length} CJ merchant{cjGaps.length === 1 ? "" : "s"} with
-              0 clicks — known web-side bypass.
+          <div className="mb-6 rounded-2xl border border-border bg-card p-4">
+            <p className="text-sm font-medium text-text">
+              {cjGaps.length} CJ catalog{cjGaps.length === 1 ? "" : "s"} live but
+              unsurfaced — big feeds nobody&apos;s built with yet, not a logging
+              gap. (CJ clicks log fine since late June 2026.)
             </p>
             <p className="text-xs text-muted mt-1">
               {cjGaps
@@ -160,29 +164,34 @@ export default async function AdminClickAnalyticsPage() {
       </section>
 
       <div className="mt-16 mb-12 rounded-2xl border border-border bg-card p-6">
-        <h3 className="font-display text-xl">Known gaps in the write path</h3>
+        <h3 className="font-display text-xl">Write-path fixes (shipped late June 2026)</h3>
         <ol className="mt-3 space-y-2 text-sm text-text list-decimal pl-5">
           <li>
-            <strong>Web bypasses CJ.</strong>{" "}
-            <code className="text-muted">web/lib/affiliate.ts</code> hands
-            kqzyfj.com URLs straight to the browser instead of routing through{" "}
-            <code className="text-muted">/api/shop</code>, so no row is
-            written. Fix: route every product click through{" "}
-            <code className="text-muted">/api/shop</code> on the Hono backend
-            and have it 302 to already-wrapped URLs.
+            <strong>CJ now logs.</strong>{" "}
+            <code className="text-muted">web/lib/affiliate.ts</code> used to hand
+            kqzyfj.com URLs straight to the browser; every product click now
+            routes through{" "}
+            <code className="text-muted">/api/shop</code> on the Hono backend,
+            which writes the row and 302s to the wrapped URL. CJ + Rakuten
+            clicks are landing again.
           </li>
           <li>
-            <strong>Web drops unaffiliated retailers.</strong> Same file
-            passes Target / Zara / Adidas / Free People links through raw.
-            iOS app logs these. Fix above closes this hole too.
+            <strong>Raw retailers now log.</strong> The same route also captures
+            unaffiliated links (Target / Zara / Adidas / Free People) that used
+            to pass through raw on web.
           </li>
           <li>
-            <strong>Historical rows have no source.</strong> The{" "}
-            <code className="text-muted">source</code> column went in on
-            2026-05-30; until Vibecode and Hono ship the field, every new
-            click still shows up as &ldquo;unknown&rdquo;.
+            <strong>Source is stamped.</strong> New clicks carry{" "}
+            <code className="text-muted">source</code> (web / ios). Only legacy
+            rows from before the late-June fix still show{" "}
+            &ldquo;unknown.&rdquo;
           </li>
         </ol>
+        <p className="mt-4 text-xs text-muted">
+          Net: the zeros above are almost all unsurfaced catalog, not dropped
+          clicks. Recheck the surfaced-but-zero brands mid-July once a full
+          post-fix 30-day window exists.
+        </p>
       </div>
     </div>
   );
