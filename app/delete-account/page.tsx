@@ -54,6 +54,24 @@ export default function DeleteAccountPage() {
           deletion within 30 days.
         </p>
 
+        <h2 className="font-display text-2xl mt-10">
+          Delete specific data without deleting your account
+        </h2>
+        <p className="mt-3 text-sm">
+          You can remove individual closet items, looks, and saved try-on
+          photos anytime in the app — deleting them removes the underlying
+          data from our servers. For anything else (for example, a specific
+          photo or your date of birth), email{" "}
+          <a
+            href="mailto:support@styledinmotion.app?subject=Delete%20specific%20data"
+            className="text-rose underline underline-offset-2"
+          >
+            support@styledinmotion.app
+          </a>{" "}
+          and tell us what you'd like removed — we complete verified requests
+          within 30 days.
+        </p>
+
         <h2 className="font-display text-2xl mt-10">What gets deleted</h2>
         <ul className="mt-3 space-y-2 text-sm list-disc list-inside">
           <li>Your account and sign-in credentials</li>
