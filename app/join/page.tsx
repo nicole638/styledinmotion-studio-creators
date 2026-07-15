@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Become a Styled in Motion creator",
     description:
-      "No follower minimum. Just taste. Keep 100% of what you earn.",
+      "No follower minimum. Just style. Keep 100% of what you earn.",
     type: "website",
   },
 };
@@ -133,7 +133,7 @@ export default async function JoinPage({
             <span className="italic">Shops that work.</span>
           </h1>
           <p className="mt-6 text-base sm:text-lg text-muted max-w-xl mx-auto leading-relaxed">
-            No follower minimum. Just taste. Built by two women, for
+            No follower minimum. Just style. Built by two women, for
             creators who deserve to keep 100% of what they earn.
           </p>
 
@@ -228,7 +228,7 @@ export default async function JoinPage({
           <div className="space-y-8">
             <Faq
               q="Do I need a minimum follower count?"
-              a="No. Not 5,000. Not 1,000. Not 100. If you have taste, we want you on the platform. We compete with LTK (5K minimum) and ShopMy (1K) — we don't gate."
+              a="No. Not 5,000. Not 1,000. Not 100. If you have style, we want you on the platform. We compete with LTK (5K minimum) and ShopMy (1K) — we don't gate."
             />
             <Faq
               q="How do creators get paid?"

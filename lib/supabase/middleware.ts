@@ -20,6 +20,10 @@ const PUBLIC_PATHS = [
   // /join is the public creator-acquisition landing page (link-in-bio
   // destination from @styled.in.motion). Indexed by search engines.
   "/join",
+  // /delete-account is the public account-deletion page required by the
+  // Google Play Data safety form (linked from the store listing, so it
+  // must render logged-out).
+  "/delete-account",
 ];
 
 function isPublic(pathname: string): boolean {
