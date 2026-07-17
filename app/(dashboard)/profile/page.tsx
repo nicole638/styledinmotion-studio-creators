@@ -1,12 +1,17 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { fetchOwnProfile } from "@/lib/profile/queries";
+import { fetchTikTokConnection } from "@/lib/tiktok/queries";
 import { ProfileEditor } from "@/components/profile/ProfileEditor";
+import { TikTokConnect } from "@/components/profile/TikTokConnect";
 
 export const metadata = { title: "Profile" };
 
 export default async function ProfilePage() {
   const profile = await fetchOwnProfile();
   if (!profile) redirect("/login");
+
+  const tiktok = await fetchTikTokConnection();
 
   return (
     <div className="max-w-3xl">
@@ -26,6 +31,12 @@ export default async function ProfilePage() {
       <div className="mt-8">
         <ProfileEditor initial={profile} />
       </div>
+
+      <div className="mt-12 editorial-divider" />
+
+      <Suspense fallback={null}>
+        <TikTokConnect creatorId={profile.creatorId} initial={tiktok} />
+      </Suspense>
     </div>
   );
 }
