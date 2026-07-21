@@ -12,9 +12,11 @@ import {
   Bookmark,
   Download,
 } from "lucide-react";
+import { buildLookShareUrl } from "@/lib/looks/share-url";
 
 interface Props {
-  /** looks.short_code — used to construct https://styled.in/<shortCode> */
+  /** looks.short_code — resolved via buildLookShareUrl() to the canonical
+   *  app.styledinmotion.app/n/<shortCode> link. */
   shortCode: string;
   /** looks.id — used to build the canonical public web look URL for Pinterest
    *  (https://shop.styledinmotion.studio/look/<lookId>). Pinterest pins must
@@ -58,10 +60,11 @@ export function ShareLookMenu({ shortCode, lookId, title, coverPhotoUrl }: Props
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const lookUrl = `https://styled.in/${shortCode}`;
+  const lookUrl = buildLookShareUrl(shortCode);
   // Pinterest must link to the public web page so the pin opens in a browser.
-  // The styled.in short link hands off to the iOS app and won't launch from a
-  // pin when the app isn't installed, so Pinterest gets the direct web URL.
+  // The /n/ short link is claimed by the iOS Universal Link association, so a
+  // pin tapped on an iPhone would try to hand off to the app and dead-end when
+  // it isn't installed. Pinterest therefore gets the direct web URL.
   const pinterestUrl = `https://shop.styledinmotion.studio/look/${lookId}`;
   const shareTitle = title || "Styled in Motion — Shop the look";
   const shareText = `Shop the look: ${shareTitle}`;

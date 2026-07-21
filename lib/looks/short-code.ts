@@ -1,7 +1,12 @@
 /**
- * 7-character base62 short codes for shareable look URLs (styled.in/<code>).
+ * 7-character base62 short codes for shareable look URLs
+ * (app.styledinmotion.app/n/<code> — see lib/looks/share-url.ts).
  * 62^7 ≈ 3.5 trillion combinations — collisions are vanishingly rare, but
  * we still retry up to 3 times on conflict to be safe.
+ *
+ * ★ These codes are CASE-SENSITIVE. Never lowercase one in a resolver or
+ * comparison — 'aB1cD2e' and 'ab1cd2e' are different looks. The /n/ handler
+ * in app-subdomain/api/n.js folds case ONLY for legacy 6-char hex codes.
  */
 
 const ALPHABET =

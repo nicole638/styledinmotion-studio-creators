@@ -14,6 +14,10 @@ import {
   rowToClosetItem,
 } from "@/types/closet";
 import { ShareLookMenu } from "@/components/looks/ShareLookMenu";
+import {
+  buildLookShareUrl,
+  buildLookShareUrlDisplay,
+} from "@/lib/looks/share-url";
 
 export const metadata = { title: "Look" };
 
@@ -189,11 +193,11 @@ export default async function LookDetailPage({
               Public link
             </p>
             <p className="font-mono text-sm truncate mt-1">
-              styled.in/{look.shortCode}
+              {buildLookShareUrlDisplay(look.shortCode)}
             </p>
           </div>
           <a
-            href={`https://styled.in/${look.shortCode}`}
+            href={buildLookShareUrl(look.shortCode)}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1 text-sm text-rose underline underline-offset-2 shrink-0"

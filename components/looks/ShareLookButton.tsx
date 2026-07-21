@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { Share2, Check } from "lucide-react";
+import { buildLookShareUrl } from "@/lib/looks/share-url";
 
 interface Props {
-  /** looks.short_code — the public-URL slug used at styled.in/<shortCode> */
+  /** looks.short_code — resolved via buildLookShareUrl() to the canonical
+   *  app.styledinmotion.app/n/<shortCode> link. */
   shortCode: string;
   /** Display title used in the share-sheet payload and clipboard toast */
   title: string;
@@ -28,9 +30,9 @@ interface Props {
  *   2. Otherwise fall back to copying the URL to the clipboard and flashing a
  *      checkmark for 1.5s. The vast majority of desktop creators end up here.
  *
- * Share URL pattern is `https://styled.in/<shortCode>` — matches the existing
- * "Public link" callout on the look detail page. Backed by the existing short-
- * code redirect, no new infra.
+ * Share URL comes from buildLookShareUrl() — matches the "Public link" callout
+ * on the look detail page and the link the iOS app emits. Backed by the
+ * existing short-code redirect, no new infra.
  */
 export function ShareLookButton({
   shortCode,
@@ -40,7 +42,7 @@ export function ShareLookButton({
 }: Props) {
   const [copied, setCopied] = useState(false);
 
-  const url = `https://styled.in/${shortCode}`;
+  const url = buildLookShareUrl(shortCode);
   const shareTitle = title || "Styled in Motion — Shop the look";
   const shareText = `Shop the look: ${shareTitle}`;
 
